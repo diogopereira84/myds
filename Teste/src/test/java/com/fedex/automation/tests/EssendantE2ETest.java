@@ -2,6 +2,7 @@ package com.fedex.automation.tests;
 
 import com.fedex.automation.base.BaseTest;
 import com.fedex.automation.model.CartContext;
+import com.fedex.automation.model.EstimateShippingRequest;
 import com.fedex.automation.model.RateQuoteResponse;
 import com.fedex.automation.model.ShippingMethod;
 import io.restassured.http.ContentType;
@@ -82,44 +83,62 @@ public class EssendantE2ETest extends BaseTest {
         CartContext updatedCart = scrapeCartContext(sku);
         assertEquals(5, updatedCart.getQty(), "Cart Update Failed!");
 */
-        // --- Step 5: Estimate Shipping (REST) ---
-        log.info("--- [Step 5] Estimate Shipping (REST) ---");
+// --- Step 5: Estimate Shipping (REST) ---
+        log.info("--- [Step 3] Estimate Shipping (REST) ---");
         String dynamicEstimateUrl = estimateEndpoint.replace("{cartId}", cartData.getMaskedQuoteId());
         log.info("Dynamic EstimateUrl: {}", dynamicEstimateUrl);
-        
-        String restPayload = """
-            {
-                "address": {
-                    "street": ["550 PEACHTREE ST NE", ""],
-                    "city": "ATLANTA",
-                    "region_id": "55",
-                    "region": "GA",
-                    "country_id": "US",
-                    "postcode": "30308",
-                    "firstname": "Diogo",
-                    "lastname": "Pereira",
-                    "company": "",
-                    "telephone": "(552) 465-4547",
-                    "custom_attributes": [{"attribute_code": "email_id", "value": "dpereira@mcfadyen.com"}]
-                },
-                "productionLocation": null,
-                "isPickup": false,
-                "reRate": true
-            }
-        """;
 
+        // Build the Request Object (Replacing the raw string)
+        EstimateShippingRequest estimateRequest = EstimateShippingRequest.builder()
+                .productionLocation(null)
+                .isPickup(false)
+                .reRate(true)
+                .address(EstimateShippingRequest.Address.builder()
+                        .street(Arrays.asList("550 PEACHTREE ST NE", ""))
+                        .city("ATLANTA")
+                        .regionId("55")
+                        .region("GA")
+                        .countryId("US")
+                        .postcode("30308")
+                        .firstname("Diogo")
+                        .lastname("Pereira")
+                        .company("")
+                        .telephone("(552) 465-4547")
+                        .customAttributes(Arrays.asList(
+                                EstimateShippingRequest.CustomAttribute.builder()
+                                        .attributeCode("email_id")
+                                        .value("dpereira@mcfadyen.com")
+                                        .build(),
+                                EstimateShippingRequest.CustomAttribute.builder()
+                                        .attributeCode("ext")
+                                        .value("")
+                                        .build(),
+                                EstimateShippingRequest.CustomAttribute.builder()
+                                        .attributeCode("residence_shipping")
+                                        .value(false)
+                                        .label("No")
+                                        .build()
+                        ))
+                        .build())
+                .build();
+
+        // Execute Request
         ShippingMethod[] shippingMethods = given()
-                .filter(cookieFilter)
+                .filter(cookieFilter) // Uses session cookies from BaseTest
                 .contentType(ContentType.JSON)
                 .header("X-Requested-With", "XMLHttpRequest")
-                .body(restPayload)
+                .header("Referer", baseUrl + "/default/checkout") // Added Referer as seen in typical flows
+                .body(estimateRequest) // Jackson automatically serializes this
                 .post(dynamicEstimateUrl)
                 .then()
+                .log().ifError()
                 .statusCode(200)
                 .extract().as(ShippingMethod[].class);
 
-        // --- Step 6: Delivery Rate API (Controller) ---
-        log.info("--- [Step 6] Delivery Rate API (Controller) ---");
+        log.info("Estimated Shipping Methods found: {}", shippingMethods.length);
+
+        // --- Step 4: Delivery Rate API (Controller) ---
+        log.info("--- [Step 4] Delivery Rate API (Controller) ---");
 
         // Construct the nested JSON string for 'ship_method_data' parameter
         String shipMethodDataJson = String.format("""
