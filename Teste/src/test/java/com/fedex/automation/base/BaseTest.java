@@ -131,7 +131,6 @@ public class BaseTest {
                 curl.append("  -H '").append(header.getName()).append(": ").append(header.getValue()).append("' \\\n");
             }
 
-            // FIXED: Using .size() > 0 instead of .isEmpty()
             if (requestSpec.getCookies().size() > 0) {
                 curl.append("  -b '");
                 for (Cookie cookie : requestSpec.getCookies()) {
@@ -140,19 +139,24 @@ public class BaseTest {
                 curl.append("' \\\n");
             }
 
+            // MODIFIED: Handle Body and Form Params uniformly using --data-raw for DevTools similarity
             if (requestSpec.getBody() != null) {
                 try {
                     String bodyStr = (requestSpec.getBody() instanceof String)
                             ? (String) requestSpec.getBody()
                             : mapper.writeValueAsString(requestSpec.getBody());
-                    curl.append("  -d '").append(bodyStr.replace("'", "'\\''")).append("'");
+                    curl.append("  --data-raw '").append(bodyStr.replace("'", "'\\''")).append("'");
                 } catch (Exception e) {
                     curl.append("  # [Error serializing body]");
                 }
             } else if (requestSpec.getFormParams() != null && !requestSpec.getFormParams().isEmpty()) {
+                // Construct a single string like "key1=value1&key2=value2" to match DevTools style
+                StringBuilder sb = new StringBuilder();
                 for (var entry : requestSpec.getFormParams().entrySet()) {
-                    curl.append("  --data-urlencode '").append(entry.getKey()).append("=").append(String.valueOf(entry.getValue()).replace("'", "'\\''")).append("' \\\n");
+                    if (sb.length() > 0) sb.append("&");
+                    sb.append(entry.getKey()).append("=").append(entry.getValue());
                 }
+                curl.append("  --data-raw '").append(sb.toString().replace("'", "'\\''")).append("'");
             }
 
             log.info(curl.toString());

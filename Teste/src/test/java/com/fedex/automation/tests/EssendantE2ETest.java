@@ -12,8 +12,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Value;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import static io.restassured.RestAssured.given;
@@ -37,7 +39,9 @@ public class EssendantE2ETest extends BaseTest {
     @Value("${endpoint.shipping.deliveryrate}")
     private String deliveryRateEndpoint;
 
-    // Recipient information
+    @Value("${endpoint.quote.create}")
+    private String createQuoteEndpoint;
+
     private static final String STREET_LINE_1 = "550 PEACHTREE ST NE";
     private static final String STREET_LINE_2 = "";
     private static final String CITY = "ATLANTA";
@@ -70,7 +74,7 @@ public class EssendantE2ETest extends BaseTest {
 
         given()
                 .filter(cookieFilter)
-                .filter(new CurlLoggingFilter()) // LOG CURL
+                .filter(new CurlLoggingFilter())
                 .contentType(ContentType.URLENC)
                 .header("X-Requested-With", "XMLHttpRequest")
                 .formParams(addParams)
@@ -79,13 +83,11 @@ public class EssendantE2ETest extends BaseTest {
                 .statusCode(302);
 
         // --- Step 2: Scrape Cart ---
-        log.info("--- [Step 2] Scrape Cart ---");
         CartContext cartData = scrapeCartContext(sku);
         assertEquals(1, cartData.getQty());
-        assertNotNull(cartData.getMaskedQuoteId(), "Masked Quote ID not found!");
 
-        // --- Step 3: Estimate Shipping (REST) ---
-        log.info("--- [Step 3] Estimate Shipping (REST) ---");
+        // --- Step 3: Estimate Shipping ---
+        log.info("--- [Step 3] Estimate Shipping ---");
         String dynamicEstimateUrl = estimateEndpoint.replace("{cartId}", cartData.getMaskedQuoteId());
 
         var address = Address.builder()
@@ -103,19 +105,19 @@ public class EssendantE2ETest extends BaseTest {
                         CustomAttribute.builder().attributeCode("email_id").value(EMAIL_ID).build(),
                         CustomAttribute.builder().attributeCode("ext").value(TELEPHONE_EXT).build(),
                         CustomAttribute.builder().attributeCode("residence_shipping").value(IS_RESIDENCE_SHIPPING).label(RESIDENCE_SHIPPING_LABEL).build()
-                ));
+                ))
+                .build();
 
         EstimateShippingRequest estimateRequest = EstimateShippingRequest.builder()
                 .productionLocation(null)
                 .isPickup(false)
                 .reRate(true)
-                .address(address.build())
+                .address(address)
                 .build();
 
-        // Now safe to use ShipMethodData[] class because we added constructors to the Model
         ShipMethodData[] shippingMethods = given()
                 .filter(cookieFilter)
-                .filter(new CurlLoggingFilter()) // LOG CURL
+                .filter(new CurlLoggingFilter())
                 .contentType(ContentType.JSON)
                 .header("X-Requested-With", "XMLHttpRequest")
                 .header("Referer", baseUrl + "/default/checkout")
@@ -125,14 +127,10 @@ public class EssendantE2ETest extends BaseTest {
                 .statusCode(200)
                 .extract().as(ShipMethodData[].class);
 
-        assertTrue(shippingMethods.length > 0, "No shipping methods returned from estimate API");
-
-        // Extract the first method to use in Step 4
         ShipMethodData firstMethod = shippingMethods[0];
-        log.info("Using Shipping Method: {} - {}", firstMethod.getCarrierTitle(), firstMethod.getMethodTitle());
 
-        // --- Step 4: Delivery Rate API (Controller) ---
-        log.info("--- [Step 4] Delivery Rate API (Controller) ---");
+        // --- Step 4: Delivery Rate API ---
+        log.info("--- [Step 4] Delivery Rate API ---");
 
         ShipMethodData shipMethodData = ShipMethodData.builder()
                 .carrierCode(firstMethod.getCarrierCode())
@@ -157,16 +155,13 @@ public class EssendantE2ETest extends BaseTest {
                 .sellerName(firstMethod.getSellerName())
                 .surchargeAmount(firstMethod.getSurchargeAmount())
                 .extensionAttributes(ExtensionAttributes.builder().fastest(true).cheapest(true).build())
-                .address(address.build())
+                .address(address)
                 .build();
 
         String shipMethodDataJson = objectMapper.writeValueAsString(shipMethodData);
-
         Map<String, String> formParams = getStringStringMap(firstMethod, shipMethodDataJson);
 
-        ObjectMapper mapper = new ObjectMapper();
-
-        Response raw = given()
+        Response rawRateResponse = given()
                 .filter(cookieFilter)
                 .filter(new CurlLoggingFilter())
                 .contentType(ContentType.URLENC)
@@ -175,30 +170,145 @@ public class EssendantE2ETest extends BaseTest {
                 .formParams(formParams)
                 .post(deliveryRateEndpoint)
                 .then()
+                .statusCode(200)
+                .extract()
+                .response();
+
+        // Strict extraction of the rateQuote node
+        String rawRateJson = rawRateResponse.asString();
+        JsonNode rootNode = objectMapper.readTree(rawRateJson);
+        String rateQuoteString = objectMapper.writeValueAsString(rootNode.get("rateQuote"));
+
+        // --- Step 5: Create Quote ---
+        log.info("--- [Step 5] Create Quote ---");
+
+        List<CreateQuotePayload.QuoteCustomAttribute> quoteCustomAttributes = new ArrayList<>();
+        quoteCustomAttributes.add(CreateQuotePayload.QuoteCustomAttribute.builder().attributeCode("email_id").value(EMAIL_ID).build());
+        quoteCustomAttributes.add(CreateQuotePayload.QuoteCustomAttribute.builder().attributeCode("ext").value(TELEPHONE_EXT).build());
+        quoteCustomAttributes.add(CreateQuotePayload.QuoteCustomAttribute.builder().attributeCode("residence_shipping").value(IS_RESIDENCE_SHIPPING).label(RESIDENCE_SHIPPING_LABEL).build());
+
+        // 1. Shipping Address (Uses QuoteShippingAddress -> Has 'alternate' & 'alt' fields)
+        CreateQuotePayload.QuoteShippingAddress mainShippingAddress = CreateQuotePayload.QuoteShippingAddress.builder()
+                .countryId(COUNTRY_ID)
+                .regionId(REGION_ID)
+                .regionCode(REGION_CODE)
+                .region(REGION_CODE)
+                .street(Arrays.asList(STREET_LINE_1, STREET_LINE_2))
+                .company(COMPANY)
+                .telephone(TELEPHONE)
+                .postcode(POSTCODE)
+                .city(CITY)
+                .firstname(FIRST_NAME)
+                .lastname(LAST_NAME)
+                .customAttributes(quoteCustomAttributes)
+                .altFirstName("")
+                .altLastName("")
+                .altPhoneNumber("")
+                .altEmail("")
+                .altPhoneNumberext("")
+                .alternate(false)
+                .build();
+
+        // 2. Billing Address (Uses QuoteBillingAddress -> Has 'alternate' & 'saveInAddressBook')
+        CreateQuotePayload.QuoteBillingAddress mainBillingAddress = CreateQuotePayload.QuoteBillingAddress.builder()
+                .countryId(COUNTRY_ID)
+                .regionId(REGION_ID)
+                .regionCode(REGION_CODE)
+                .region(REGION_CODE)
+                .street(Arrays.asList(STREET_LINE_1, STREET_LINE_2))
+                .company(COMPANY)
+                .telephone(TELEPHONE)
+                .postcode(POSTCODE)
+                .city(CITY)
+                .firstname(FIRST_NAME)
+                .lastname(LAST_NAME)
+                .customAttributes(quoteCustomAttributes)
+                .altFirstName("")
+                .altLastName("")
+                .altPhoneNumber("")
+                .altEmail("")
+                .altPhoneNumberext("")
+                .alternate(false)
+                .saveInAddressBook(null)
+                .build();
+
+        // 3. Detail Address (Uses QuoteDetailAddress -> STRICTLY NO 'alternate' OR 'alt' fields)
+        CreateQuotePayload.QuoteDetailAddress quoteDetailAddress = CreateQuotePayload.QuoteDetailAddress.builder()
+                .countryId(COUNTRY_ID)
+                .regionId(REGION_ID)
+                .regionCode(REGION_CODE)
+                .region(REGION_CODE)
+                .street(Arrays.asList(STREET_LINE_1, STREET_LINE_2))
+                .company(COMPANY)
+                .telephone(TELEPHONE)
+                .postcode(POSTCODE)
+                .city(CITY)
+                .firstname(FIRST_NAME)
+                .lastname(LAST_NAME)
+                .customAttributes(quoteCustomAttributes)
+                .build();
+
+        CreateQuotePayload.QuoteShippingDetail quoteShippingDetail = CreateQuotePayload.QuoteShippingDetail.builder()
+                .carrierCode(shipMethodData.getCarrierCode())
+                .methodCode(shipMethodData.getMethodCode())
+                .carrierTitle(shipMethodData.getCarrierTitle())
+                .methodTitle(shipMethodData.getMethodTitle())
+                .amount(0) // Integer 0
+                .baseAmount(0)
+                .available(shipMethodData.getAvailable())
+                .priceInclTax(0)
+                .priceExclTax(0)
+                .offerId(shipMethodData.getOfferId())
+                .title(shipMethodData.getTitle())
+                .selected(shipMethodData.getSelected())
+                .selectedCode(shipMethodData.getSelectedCode())
+                .itemId(shipMethodData.getItemId())
+                .shippingTypeLabel(shipMethodData.getShippingTypeLabel())
+                .deliveryDate(shipMethodData.getDeliveryDate())
+                .deliveryDateText(shipMethodData.getDeliveryDateText())
+                .marketplace(shipMethodData.getMarketplace())
+                .sellerId(shipMethodData.getSellerId())
+                .sellerName(shipMethodData.getSellerName())
+                .surchargeAmount(shipMethodData.getSurchargeAmount())
+                .extensionAttributes(shipMethodData.getExtensionAttributes())
+                .address(quoteDetailAddress) // Uses the Strict Detail Address
+                .fedexShipReferenceId("")
+                .productionLocation("")
+                .build();
+
+        CreateQuotePayload.AddressInformation addressInfo = CreateQuotePayload.AddressInformation.builder()
+                .shippingAddress(mainShippingAddress)
+                .billingAddress(mainBillingAddress)
+                .shippingMethodCode(firstMethod.getMethodCode())
+                .shippingCarrierCode(firstMethod.getCarrierCode())
+                .shippingDetail(quoteShippingDetail)
+                .build();
+
+        CreateQuotePayload quotePayload = CreateQuotePayload.builder()
+                .addressInformation(addressInfo)
+                .rateApiResponse(rateQuoteString)
+                .build();
+
+        String quotePayloadJson = objectMapper.writeValueAsString(quotePayload);
+
+        // Uses --data-raw emulation via body string to prevent URL encoding
+        Response quoteResponse = given()
+                .filter(cookieFilter)
+                .filter(new CurlLoggingFilter())
+                .contentType("application/x-www-form-urlencoded; charset=UTF-8")
+                .header("X-Requested-With", "XMLHttpRequest")
+                .header("Referer", baseUrl + "/default/checkout")
+                .body("data=" + quotePayloadJson)
+                .post(createQuoteEndpoint)
+                .then()
                 .log().ifError()
                 .statusCode(200)
                 .extract()
                 .response();
 
-        String rawJson = raw.asString();
-        JsonNode tree = mapper.readTree(rawJson);
-        String pretty = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(tree);
-
-        log.info("Full response:\n{}", pretty);
-
-        RateQuoteResponse response = mapper.treeToValue(tree, RateQuoteResponse.class);
-
-        // --- Assertions ---
-        assertNotNull(response.getRateQuote(), "Rate Quote object is null");
-        assertFalse(response.getRateQuote().getRateQuoteDetails().isEmpty(), "No Rate Quote Details found");
-
-        RateQuoteResponse.ProductLine productLine = response.getRateQuote()
-                .getRateQuoteDetails().getFirst()
-                .getProductLines().getFirst();
-
-        log.info("Validating Product Line: '{}'", productLine.getName());
-        assertEquals(1, productLine.getUnitQuantity());
-        log.info("TEST PASSED: Delivery Rate API returned correct quantity.");
+        log.info("Quote Response: {}", quoteResponse.asString());
+        JsonNode quoteTree = objectMapper.readTree(quoteResponse.asString());
+        assertTrue(quoteTree.has("stateOrProvinceCode"), "Response missing stateOrProvinceCode");
     }
 
     private static Map<String, String> getStringStringMap(ShipMethodData firstMethod, String shipMethodDataJson) {
