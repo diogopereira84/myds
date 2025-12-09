@@ -1,11 +1,13 @@
 package com.fedex.automation.tests;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fedex.automation.base.BaseTest;
-import com.fedex.automation.model.CartContext;
-import com.fedex.automation.model.EstimateShippingRequest;
-import com.fedex.automation.model.RateQuoteResponse;
-import com.fedex.automation.model.ShippingMethod;
+import com.fedex.automation.model.*;
+import com.fedex.automation.model.EstimateShippingRequest.CustomAttribute;
+import com.fedex.automation.model.ShipMethodData.ExtensionAttributes;
 import io.restassured.http.ContentType;
+import io.restassured.response.Response;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Value;
@@ -13,7 +15,6 @@ import org.springframework.beans.factory.annotation.Value;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Optional;
 
 import static io.restassured.RestAssured.given;
 import static org.junit.jupiter.api.Assertions.*;
@@ -30,14 +31,28 @@ public class EssendantE2ETest extends BaseTest {
     @Value("${endpoint.cart.add}")
     private String addEndpoint;
 
-    @Value("${endpoint.cart.update}")
-    private String updateEndpoint;
-
     @Value("${endpoint.shipping.estimate}")
     private String estimateEndpoint;
 
     @Value("${endpoint.shipping.deliveryrate}")
     private String deliveryRateEndpoint;
+
+    // Recipient information
+    private static final String STREET_LINE_1 = "550 PEACHTREE ST NE";
+    private static final String STREET_LINE_2 = "";
+    private static final String CITY = "ATLANTA";
+    private static final String REGION_ID = "55";
+    private static final String REGION_CODE = "GA";
+    private static final String COUNTRY_ID = "US";
+    private static final String POSTCODE = "30308";
+    private static final String FIRST_NAME = "Diogo";
+    private static final String LAST_NAME = "Pereira";
+    private static final String COMPANY = "";
+    private static final String TELEPHONE = "5524654547";
+    private static final String TELEPHONE_EXT = "";
+    private static final String EMAIL_ID = "dpereira@mcfadyen.com";
+    private static final String RESIDENCE_SHIPPING_LABEL = "No";
+    private static final boolean IS_RESIDENCE_SHIPPING = false;
 
     @Test
     public void testEssendantAddUpdateCheckoutFlow() throws Exception {
@@ -53,9 +68,15 @@ public class EssendantE2ETest extends BaseTest {
         addParams.put("punchout_disabled", "1");
         addParams.put("super_attribute", "");
 
-        given().filter(cookieFilter).contentType(ContentType.URLENC)
+        given()
+                .filter(cookieFilter)
+                .filter(new CurlLoggingFilter()) // LOG CURL
+                .contentType(ContentType.URLENC)
                 .header("X-Requested-With", "XMLHttpRequest")
-                .formParams(addParams).post(addEndpoint).then().statusCode(302);
+                .formParams(addParams)
+                .post(addEndpoint)
+                .then()
+                .statusCode(302);
 
         // --- Step 2: Scrape Cart ---
         log.info("--- [Step 2] Scrape Cart ---");
@@ -63,157 +84,141 @@ public class EssendantE2ETest extends BaseTest {
         assertEquals(1, cartData.getQty());
         assertNotNull(cartData.getMaskedQuoteId(), "Masked Quote ID not found!");
 
-/*
-        // --- Step 3: Update Cart Quantity ---
-        log.info("--- [Step 3] Updating Quantity to 5 ---");
-        Map<String, String> updateParams = new HashMap<>();
-        updateParams.put("form_key", formKey);
-        updateParams.put("cart[" + cartData.getItemId() + "][qty]", "5");
-        updateParams.put("update_cart_action", "update_qty");
-
-        given()
-                .filter(cookieFilter)
-                .header("X-Requested-With", "XMLHttpRequest")
-                .formParams(updateParams)
-                .when()
-                .post(updateEndpoint)
-                .then()
-                .statusCode(302);
-
-        CartContext updatedCart = scrapeCartContext(sku);
-        assertEquals(5, updatedCart.getQty(), "Cart Update Failed!");
-*/
-// --- Step 5: Estimate Shipping (REST) ---
+        // --- Step 3: Estimate Shipping (REST) ---
         log.info("--- [Step 3] Estimate Shipping (REST) ---");
         String dynamicEstimateUrl = estimateEndpoint.replace("{cartId}", cartData.getMaskedQuoteId());
-        log.info("Dynamic EstimateUrl: {}", dynamicEstimateUrl);
 
-        // Build the Request Object (Replacing the raw string)
+        var address = Address.builder()
+                .street(Arrays.asList(STREET_LINE_1, STREET_LINE_2))
+                .city(CITY)
+                .regionId(REGION_ID)
+                .region(REGION_CODE)
+                .countryId(COUNTRY_ID)
+                .postcode(POSTCODE)
+                .firstname(FIRST_NAME)
+                .lastname(LAST_NAME)
+                .company(COMPANY)
+                .telephone(TELEPHONE)
+                .customAttributes(Arrays.asList(
+                        CustomAttribute.builder().attributeCode("email_id").value(EMAIL_ID).build(),
+                        CustomAttribute.builder().attributeCode("ext").value(TELEPHONE_EXT).build(),
+                        CustomAttribute.builder().attributeCode("residence_shipping").value(IS_RESIDENCE_SHIPPING).label(RESIDENCE_SHIPPING_LABEL).build()
+                ));
+
         EstimateShippingRequest estimateRequest = EstimateShippingRequest.builder()
                 .productionLocation(null)
                 .isPickup(false)
                 .reRate(true)
-                .address(EstimateShippingRequest.Address.builder()
-                        .street(Arrays.asList("550 PEACHTREE ST NE", ""))
-                        .city("ATLANTA")
-                        .regionId("55")
-                        .region("GA")
-                        .countryId("US")
-                        .postcode("30308")
-                        .firstname("Diogo")
-                        .lastname("Pereira")
-                        .company("")
-                        .telephone("(552) 465-4547")
-                        .customAttributes(Arrays.asList(
-                                EstimateShippingRequest.CustomAttribute.builder()
-                                        .attributeCode("email_id")
-                                        .value("dpereira@mcfadyen.com")
-                                        .build(),
-                                EstimateShippingRequest.CustomAttribute.builder()
-                                        .attributeCode("ext")
-                                        .value("")
-                                        .build(),
-                                EstimateShippingRequest.CustomAttribute.builder()
-                                        .attributeCode("residence_shipping")
-                                        .value(false)
-                                        .label("No")
-                                        .build()
-                        ))
-                        .build())
+                .address(address.build())
                 .build();
 
-        // Execute Request
-        ShippingMethod[] shippingMethods = given()
-                .filter(cookieFilter) // Uses session cookies from BaseTest
+        // Now safe to use ShipMethodData[] class because we added constructors to the Model
+        ShipMethodData[] shippingMethods = given()
+                .filter(cookieFilter)
+                .filter(new CurlLoggingFilter()) // LOG CURL
                 .contentType(ContentType.JSON)
                 .header("X-Requested-With", "XMLHttpRequest")
-                .header("Referer", baseUrl + "/default/checkout") // Added Referer as seen in typical flows
-                .body(estimateRequest) // Jackson automatically serializes this
+                .header("Referer", baseUrl + "/default/checkout")
+                .body(estimateRequest)
                 .post(dynamicEstimateUrl)
                 .then()
-                .log().ifError()
                 .statusCode(200)
-                .extract().as(ShippingMethod[].class);
+                .extract().as(ShipMethodData[].class);
 
-        log.info("Estimated Shipping Methods found: {}", shippingMethods.length);
+        assertTrue(shippingMethods.length > 0, "No shipping methods returned from estimate API");
+
+        // Extract the first method to use in Step 4
+        ShipMethodData firstMethod = shippingMethods[0];
+        log.info("Using Shipping Method: {} - {}", firstMethod.getCarrierTitle(), firstMethod.getMethodTitle());
 
         // --- Step 4: Delivery Rate API (Controller) ---
         log.info("--- [Step 4] Delivery Rate API (Controller) ---");
 
-        // Construct the nested JSON string for 'ship_method_data' parameter
-        String shipMethodDataJson = String.format("""
-            {
-                "carrier_code": "marketplace_2941",
-                "method_code": "FREE_GROUND_US",
-                "carrier_title": "Essendant",
-                "method_title": "FedEx Ground US",
-                "offer_id": "2941",
-                "title": "Essendant",
-                "selected": "marketplace_2941_FREE_GROUND_US",
-                "item_id": "%s",
-                "shipping_type_label": "FedEx Ground US",
-                "marketplace": true,
-                "seller_id": "2021",
-                "address": {
-                    "countryId": "US",
-                    "regionId": "55",
-                    "regionCode": "GA",
-                    "region": "GA",
-                    "street": ["550 PEACHTREE ST NE", ""],
-                    "company": "",
-                    "telephone": "(552) 465-4547",
-                    "postcode": "30308",
-                    "city": "ATLANTA",
-                    "firstname": "Diogo",
-                    "lastname": "Pereira"
-                }
-            }
-        """, cartData.getItemId()); // Dynamic Item ID injection
+        ShipMethodData shipMethodData = ShipMethodData.builder()
+                .carrierCode(firstMethod.getCarrierCode())
+                .methodCode(firstMethod.getMethodCode())
+                .carrierTitle(firstMethod.getCarrierTitle())
+                .methodTitle(firstMethod.getMethodTitle())
+                .offerId(firstMethod.getOfferId())
+                .title(firstMethod.getCarrierTitle())
+                .selected(firstMethod.getCarrierCode() + "_" + firstMethod.getMethodCode())
+                .itemId(cartData.getItemId())
+                .shippingTypeLabel(firstMethod.getMethodTitle())
+                .marketplace(firstMethod.getMarketplace())
+                .sellerId(firstMethod.getSellerId())
+                .amount(firstMethod.getAmount())
+                .baseAmount(firstMethod.getBaseAmount())
+                .available(firstMethod.getAvailable())
+                .priceInclTax(firstMethod.getPriceInclTax())
+                .priceExclTax(firstMethod.getPriceExclTax())
+                .selectedCode(firstMethod.getMethodCode())
+                .deliveryDate(firstMethod.getDeliveryDate())
+                .deliveryDateText(firstMethod.getDeliveryDateText())
+                .sellerName(firstMethod.getSellerName())
+                .surchargeAmount(firstMethod.getSurchargeAmount())
+                .extensionAttributes(ExtensionAttributes.builder().fastest(true).cheapest(true).build())
+                .address(address.build())
+                .build();
 
-        // Build Form Params
-        Map<String, String> formParams = new HashMap<>();
-        formParams.put("firstname", "Diogo");
-        formParams.put("lastname", "Pereira");
-        formParams.put("email", "dpereira@mcfadyen.com");
-        formParams.put("telephone", "5524654547");
-        formParams.put("ship_method", "FREE_GROUND_US");
-        formParams.put("zipcode", "30308");
-        formParams.put("region_id", "55");
-        formParams.put("city", "ATLANTA");
-        formParams.put("street[]", "550 PEACHTREE ST NE");
-        formParams.put("is_residence_shipping", "false");
-        formParams.put("ship_method_data", shipMethodDataJson); // The massive JSON string
-        formParams.put("third_party_carrier_code", "marketplace_2941");
-        formParams.put("third_party_method_code", "FREE_GROUND_US");
+        String shipMethodDataJson = objectMapper.writeValueAsString(shipMethodData);
 
-        // Execute Request
-        RateQuoteResponse response = given()
+        Map<String, String> formParams = getStringStringMap(firstMethod, shipMethodDataJson);
+
+        ObjectMapper mapper = new ObjectMapper();
+
+        Response raw = given()
                 .filter(cookieFilter)
+                .filter(new CurlLoggingFilter())
                 .contentType(ContentType.URLENC)
                 .header("X-Requested-With", "XMLHttpRequest")
                 .header("Referer", baseUrl + "/default/checkout")
                 .formParams(formParams)
-                .when()
                 .post(deliveryRateEndpoint)
                 .then()
                 .log().ifError()
                 .statusCode(200)
-                .extract().as(RateQuoteResponse.class);
+                .extract()
+                .response();
+
+        String rawJson = raw.asString();
+        JsonNode tree = mapper.readTree(rawJson);
+        String pretty = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(tree);
+
+        log.info("Full response:\n{}", pretty);
+
+        RateQuoteResponse response = mapper.treeToValue(tree, RateQuoteResponse.class);
 
         // --- Assertions ---
         assertNotNull(response.getRateQuote(), "Rate Quote object is null");
         assertFalse(response.getRateQuote().getRateQuoteDetails().isEmpty(), "No Rate Quote Details found");
 
-        // Navigate to the product line to check quantity
         RateQuoteResponse.ProductLine productLine = response.getRateQuote()
                 .getRateQuoteDetails().getFirst()
                 .getProductLines().getFirst();
 
         log.info("Validating Product Line: '{}'", productLine.getName());
+        assertEquals(1, productLine.getUnitQuantity());
+        log.info("TEST PASSED: Delivery Rate API returned correct quantity.");
+    }
 
-        // Assert Quantity is 1 (as per the requirement to match selection)
-        assertEquals(1, productLine.getUnitQuantity(), "Unit Quantity in Rate Quote mismatch!");
-
-        log.info("TEST PASSED: Delivery Rate API returned correct quantity of 1.");
+    private static Map<String, String> getStringStringMap(ShipMethodData firstMethod, String shipMethodDataJson) {
+        Map<String, String> formParams = new HashMap<>();
+        formParams.put("firstname", FIRST_NAME);
+        formParams.put("lastname", LAST_NAME);
+        formParams.put("email", EMAIL_ID);
+        formParams.put("telephone", TELEPHONE);
+        formParams.put("ship_method", firstMethod.getMethodCode());
+        formParams.put("zipcode", POSTCODE);
+        formParams.put("region_id", REGION_ID);
+        formParams.put("city", CITY);
+        formParams.put("street[]", STREET_LINE_1);
+        formParams.put("is_residence_shipping", String.valueOf(IS_RESIDENCE_SHIPPING));
+        formParams.put("ship_method_data", shipMethodDataJson);
+        formParams.put("third_party_carrier_code", firstMethod.getCarrierCode());
+        formParams.put("third_party_method_code", firstMethod.getMethodCode());
+        formParams.put("first_party_carrier_code", "");
+        formParams.put("first_party_method_code", "");
+        formParams.put("location_id", "");
+        return formParams;
     }
 }
