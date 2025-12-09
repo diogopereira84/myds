@@ -7,15 +7,16 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-/**
- * DTO for the Estimate Shipping Methods API request body.
- */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class EstimateShippingRequest {
+
+    // Added field for Step 3 fix
+    @JsonProperty("pickup")
+    private boolean pickup;
 
     @JsonProperty("address")
     private Address address;

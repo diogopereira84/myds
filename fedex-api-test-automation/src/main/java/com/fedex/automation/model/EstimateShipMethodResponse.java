@@ -1,21 +1,21 @@
 package com.fedex.automation.model;
 
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-/**
- * DTO for the 'ship_method_data' JSON string required by the Delivery Rate API.
- */
+import java.math.BigDecimal;
+import java.util.List;
+
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@JsonIgnoreProperties(ignoreUnknown = true)
-public class ShipMethodData {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+public class EstimateShipMethodResponse {
 
     @JsonProperty("carrier_code")
     private String carrierCode;
@@ -29,28 +29,24 @@ public class ShipMethodData {
     @JsonProperty("method_title")
     private String methodTitle;
 
-    @JsonProperty("amount")
-    private Double amount;
+    private BigDecimal amount;
 
     @JsonProperty("base_amount")
-    private Double baseAmount;
+    private BigDecimal baseAmount;
 
-    @JsonProperty("available")
     private Boolean available;
 
     @JsonProperty("price_incl_tax")
-    private Double priceInclTax;
+    private BigDecimal priceInclTax;
 
     @JsonProperty("price_excl_tax")
-    private Double priceExclTax;
+    private BigDecimal priceExclTax;
 
     @JsonProperty("offer_id")
     private String offerId;
 
-    @JsonProperty("title")
     private String title;
 
-    @JsonProperty("selected")
     private String selected;
 
     @JsonProperty("selected_code")
@@ -62,13 +58,15 @@ public class ShipMethodData {
     @JsonProperty("shipping_type_label")
     private String shippingTypeLabel;
 
+    /**
+     * Geralmente string humana no Magento
+     */
     @JsonProperty("deliveryDate")
     private String deliveryDate;
 
     @JsonProperty("deliveryDateText")
     private String deliveryDateText;
 
-    @JsonProperty("marketplace")
     private Boolean marketplace;
 
     @JsonProperty("seller_id")
@@ -83,19 +81,15 @@ public class ShipMethodData {
     @JsonProperty("extension_attributes")
     private ExtensionAttributes extensionAttributes;
 
-    @JsonProperty("address")
     private Address address;
 
     @Data
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
-    @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class ExtensionAttributes {
-        @JsonProperty("fastest")
         private Boolean fastest;
-
-        @JsonProperty("cheapest")
         private Boolean cheapest;
     }
 
@@ -103,15 +97,51 @@ public class ShipMethodData {
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
-    @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public static class Address {
+
+        @JsonProperty("countryId")
+        private String countryId;
+
+        @JsonProperty("regionId")
+        private String regionId;
+
+        @JsonProperty("regionCode")
+        private String regionCode;
+
+        private String region;
+
+        private List<String> street;
+
+        private String company;
+        private String telephone;
+
+        @JsonProperty("postcode")
+        private String postcode;
+
+        private String city;
+        private String firstname;
+        private String lastname;
+
+        @JsonProperty("customAttributes")
+        private List<CustomAttribute> customAttributes;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class CustomAttribute {
+
         @JsonProperty("attribute_code")
         private String attributeCode;
 
-        @JsonProperty("value")
+        /**
+         * Pode vir String/Boolean/etc
+         */
         private Object value;
 
-        @JsonProperty("label")
         private String label;
     }
 }
