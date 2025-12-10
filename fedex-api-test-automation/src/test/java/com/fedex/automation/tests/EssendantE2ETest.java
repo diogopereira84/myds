@@ -4,18 +4,17 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fedex.automation.base.BaseTest;
 import com.fedex.automation.model.*;
 import com.fedex.automation.model.EstimateShippingRequest.CustomAttribute;
+import com.fedex.automation.utils.FedExEncryptionUtil;
 import io.restassured.http.ContentType;
 import io.restassured.response.Response;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Value;
-import com.fedex.automation.utils.FedExEncryptionUtil;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 
-import static io.restassured.RestAssured.given;
 import static org.junit.jupiter.api.Assertions.*;
 
 @Slf4j
@@ -58,19 +57,26 @@ public class EssendantE2ETest extends BaseTest {
     private static final String TELEPHONE = "5524654547";
     private static final String TELEPHONE_EXT = "";
     private static final String EMAIL_ID = "dpereira@mcfadyen.com";
-    private static final String RESIDENCE_SHIPPING_LABEL = "No";
-    private static final boolean IS_RESIDENCE_SHIPPING = false;
 
-    // Alinhado com UI
+    // --- FIX 1: Align Residence Flags with UI (Must be TRUE/YES for this test context) ---
+    private static final String RESIDENCE_SHIPPING_LABEL = "Yes";
+    private static final boolean IS_RESIDENCE_SHIPPING = true;
+
+    // Aligned with UI
     private static final String PREFERRED_THIRD_PARTY_CARRIER_CODE = "marketplace_2941";
     private static final String PREFERRED_METHOD_CODE = "FREE_GROUND_US";
 
-    // Dados "dummy" do cartão (como no curl)
+    // Dummy card data (as in UI)
     private static final String PAYMENT_METHOD = "cc";
     private static final String CARD_YEAR = "2035";
     private static final String CARD_EXPIRE = "02";
     private static final String NAME_ON_CARD = "RALPH";
-    private static final String MASKED_NUMBER = "4111111111111111";
+
+    // Raw number for encryption only
+    private static final String RAW_CARD_NUMBER = "4111111111111111";
+    // --- FIX 2: Masked number for the JSON payload ---
+    private static final String MASKED_CARD_NUMBER = "*1111";
+
     private static final String CVV = "471";
     private static final String CREDIT_CARD_TYPE_URL = "https://dev.office.fedex.com/media/wysiwyg/Visa.png";
 
@@ -78,6 +84,7 @@ public class EssendantE2ETest extends BaseTest {
     public void testEssendantAddUpdateCheckoutFlow() throws Exception {
         // --- Step 0: Bootstrap ---
         bootstrapSession();
+        assertNotNull(formKey, "Form key must be available after bootstrap");
 
         // --- Step 1: Add to Cart ---
         log.info("--- [Step 1] Add to Cart ---");
@@ -89,20 +96,24 @@ public class EssendantE2ETest extends BaseTest {
         addParams.put("punchout_disabled", "1");
         addParams.put("super_attribute", "");
 
-        given()
-                .filter(cookieFilter)
-                .filter(new CurlLoggingFilter())
+        Response addResponse = givenWithSession()
                 .contentType(ContentType.URLENC)
                 .header("X-Requested-With", "XMLHttpRequest")
                 .formParams(addParams)
                 .post(addEndpoint)
                 .then()
-                .statusCode(302);
+                .extract().response();
+
+        assertEquals(302, addResponse.statusCode(), "Add to cart should redirect (302)");
+        log.info("Item added to cart successfully. Status: {}", addResponse.statusCode());
 
         // --- Step 2: Scrape Cart ---
         log.info("--- [Step 2] Scrape Cart ---");
         CartContext cartData = scrapeCartContext(sku);
-        assertEquals(1, cartData.getQty());
+
+        assertNotNull(cartData, "Cart context should not be null");
+        assertEquals(1, cartData.getQty(), "Cart quantity should be 1");
+        log.info("Cart scraped. Item ID: {}, Quote ID: {}", cartData.getItemId(), cartData.getQuoteId());
 
         // --- Step 3: Estimate Shipping ---
         log.info("--- [Step 3] Estimate Shipping ---");
@@ -124,8 +135,8 @@ public class EssendantE2ETest extends BaseTest {
                         CustomAttribute.builder().attributeCode("ext").value(TELEPHONE_EXT).build(),
                         CustomAttribute.builder()
                                 .attributeCode("residence_shipping")
-                                .value(IS_RESIDENCE_SHIPPING)
-                                .label(RESIDENCE_SHIPPING_LABEL)
+                                .value(IS_RESIDENCE_SHIPPING) // Uses TRUE
+                                .label(RESIDENCE_SHIPPING_LABEL) // Uses "Yes"
                                 .build()
                 ))
                 .build();
@@ -138,9 +149,7 @@ public class EssendantE2ETest extends BaseTest {
                 .address(address)
                 .build();
 
-        Response estimateRawResponse = given()
-                .filter(cookieFilter)
-                .filter(new CurlLoggingFilter())
+        Response estimateRawResponse = givenWithSession()
                 .contentType(ContentType.JSON)
                 .header("X-Requested-With", "XMLHttpRequest")
                 .header("Referer", baseUrl + "/default/checkout")
@@ -156,20 +165,17 @@ public class EssendantE2ETest extends BaseTest {
 
         assertNotNull(shippingMethods, "Estimate response should not be null");
         assertTrue(shippingMethods.length > 0, "Estimate should return at least one method");
+        log.info("Shipping methods estimated: {}", shippingMethods.length);
 
-        EstimateShipMethodResponse chosenMethod =
-                selectPreferredMethod(shippingMethods);
+        EstimateShipMethodResponse chosenMethod = selectPreferredMethod(shippingMethods);
+        log.info("Selected shipping method: {} ({})", chosenMethod.getMethodCode(), chosenMethod.getCarrierCode());
 
-        // Pega o nó original do método no JSON (mais fiel à UI)
-        String shipMethodDataJson =
-                extractShipMethodDataJson(estimateRawResponse, chosenMethod);
+        String shipMethodDataJson = extractShipMethodDataJson(estimateRawResponse, chosenMethod);
 
         // --- Step 4: Delivery Rate API ---
         log.info("--- [Step 4] Delivery Rate API ---");
 
-        Response rawRateResponse = given()
-                .filter(cookieFilter)
-                .filter(new CurlLoggingFilter())
+        Response rawRateResponse = givenWithSession()
                 .contentType("application/x-www-form-urlencoded; charset=UTF-8")
                 .header("X-Requested-With", "XMLHttpRequest")
                 .header("Referer", baseUrl + "/default/checkout")
@@ -197,18 +203,14 @@ public class EssendantE2ETest extends BaseTest {
                 .extract()
                 .response();
 
-        log.debug("Step 4 response:\n{}", rawRateResponse.asPrettyString());
+        JsonNode step4Root = objectMapper.readTree(rawRateResponse.asString());
+        JsonNode rateQuoteNode = step4Root.get("rateQuote");
+        assertNotNull(rateQuoteNode, "Step 4 must return 'rateQuote' object");
+        log.info("Delivery rate verified.");
 
         // --- Step 5: Create Quote ---
         log.info("--- [Step 5] Create Quote ---");
-
-        JsonNode step4Root = objectMapper.readTree(rawRateResponse.asString());
-        JsonNode rateQuoteNode = step4Root.get("rateQuote");
-        assertNotNull(rateQuoteNode, "Step 4 must return rateQuote");
-
         String rateQuoteString = objectMapper.writeValueAsString(rateQuoteNode);
-
-        // shipping_detail vem do ship_method_data (UI)
         JsonNode shippingDetailNode = objectMapper.readTree(shipMethodDataJson);
 
         Map<String, Object> shippingAddress = buildQuoteAddress(false);
@@ -226,9 +228,7 @@ public class EssendantE2ETest extends BaseTest {
         quotePayload.put("addressInformation", addressInformation);
         quotePayload.put("rateapi_response", rateQuoteString);
 
-        Response createQuoteResponse = given()
-                .filter(cookieFilter)
-                .filter(new CurlLoggingFilter())
+        Response createQuoteResponse = givenWithSession()
                 .contentType("application/x-www-form-urlencoded; charset=UTF-8")
                 .header("X-Requested-With", "XMLHttpRequest")
                 .header("Referer", baseUrl + "/default/checkout")
@@ -240,13 +240,15 @@ public class EssendantE2ETest extends BaseTest {
                 .extract()
                 .response();
 
-        log.debug("Step 5 response:\n{}", createQuoteResponse.asPrettyString());
+        String quoteRespString = createQuoteResponse.asString();
+        assertFalse(quoteRespString.toLowerCase().contains("exception"),
+                "Quote creation should not return exceptions");
+        log.info("Quote successfully created/updated.");
 
+        // --- Step 6: Pay Rate API ---
         log.info("--- [Step 6] Pay Rate API ---");
 
-        Response payRateResponse = given()
-                .filter(cookieFilter)
-                .filter(new CurlLoggingFilter())
+        Response payRateResponse = givenWithSession()
                 .contentType("application/x-www-form-urlencoded; charset=UTF-8")
                 .header("X-Requested-With", "XMLHttpRequest")
                 .header("Referer", baseUrl + "/default/checkout")
@@ -260,24 +262,25 @@ public class EssendantE2ETest extends BaseTest {
                 .extract()
                 .response();
 
-        log.debug("Step 6 response:\n{}", payRateResponse.asPrettyString());
+        assertNotNull(payRateResponse.body(), "PayRate response should not be null");
+        log.info("Pay Rate API called successfully.");
 
+        // --- Step 7: Submit Order ---
         log.info("--- [Step 7] Submit Order ---");
 
-        // 1. Fetch Key
         String publicKeyPEM = fetchEncryptionKey();
+        assertNotNull(publicKeyPEM, "Public key must be fetched for encryption");
 
-        // 2. Encrypt (Generates Standard Base64: "abc+123/==")
-        String rawEncCCData = com.fedex.automation.utils.FedExEncryptionUtil.encryptCreditCard(
-                MASKED_NUMBER,
+        // --- CRITICAL: Encrypt using the RAW card number ---
+        String rawEncCCData = FedExEncryptionUtil.encryptCreditCard(
+                RAW_CARD_NUMBER,
                 CARD_EXPIRE,
                 CARD_YEAR,
                 CVV,
                 publicKeyPEM
         );
 
-        // --- CRITICAL FIX: URL ENCODE THE OUTPUT ---
-        // Turns "abc+123/==" into "abc%2B123%2F%3D%3D"
+        // URL-encode the standard Base64 output so it matches the UI format
         String finalEncCCData = URLEncoder.encode(rawEncCCData, StandardCharsets.UTF_8);
 
         Map<String, Object> paymentBillingAddress = buildPaymentBillingAddress();
@@ -288,7 +291,10 @@ public class EssendantE2ETest extends BaseTest {
         paymentData.put("year", CARD_YEAR);
         paymentData.put("expire", CARD_EXPIRE);
         paymentData.put("nameOnCard", NAME_ON_CARD);
-        paymentData.put("number", MASKED_NUMBER);
+
+        // --- CRITICAL: Payload uses MASKED number ---
+        paymentData.put("number", MASKED_CARD_NUMBER);
+
         paymentData.put("cvv", CVV);
         paymentData.put("isBillingAddress", false);
         paymentData.put("isFedexAccountApplied", false);
@@ -306,11 +312,10 @@ public class EssendantE2ETest extends BaseTest {
         submitPayload.put("selectedProductionId", null);
         submitPayload.put("g-recaptcha-response", "");
 
-        Response submitOrderResponse = given()
-                .filter(cookieFilter)
-                .filter(new CurlLoggingFilter())
+        Response submitOrderResponse = givenWithSession()
                 .contentType("application/x-www-form-urlencoded; charset=UTF-8")
                 .header("X-Requested-With", "XMLHttpRequest")
+                .header("Origin", baseUrl)
                 .header("Referer", baseUrl + "/default/checkout")
                 .header("Accept", "application/json, text/javascript, */*; q=0.01")
                 .queryParam("pickstore", "0")
@@ -321,7 +326,12 @@ public class EssendantE2ETest extends BaseTest {
                 .extract()
                 .response();
 
-        log.debug("Step 7 response:\n{}", submitOrderResponse.asPrettyString());
+        log.info("Step 7 response:\n{}", submitOrderResponse.asPrettyString());
+
+        String submitBody = submitOrderResponse.asString();
+        assertFalse(submitBody.contains("\"error\":true"), "Order submission returned an error");
+        assertFalse(submitBody.contains("\"success\":false"), "Order submission success flag is false");
+        log.info("Order submitted successfully. Response length: {}", submitBody.length());
     }
 
     private EstimateShipMethodResponse selectPreferredMethod(EstimateShipMethodResponse[] methods) {
@@ -341,10 +351,6 @@ public class EssendantE2ETest extends BaseTest {
         return byMethod.orElse(methods[0]);
     }
 
-    /**
-     * Retorna o JSON "original" do método escolhido direto do array do response,
-     * evitando diferenças de serialização entre POJO vs UI.
-     */
     private String extractShipMethodDataJson(Response estimateRaw, EstimateShipMethodResponse chosen) throws Exception {
         JsonNode root = objectMapper.readTree(estimateRaw.asString());
 
@@ -360,7 +366,6 @@ public class EssendantE2ETest extends BaseTest {
             }
         }
 
-        // fallback seguro
         return objectMapper.writeValueAsString(chosen);
     }
 
@@ -384,7 +389,6 @@ public class EssendantE2ETest extends BaseTest {
         customAttributes.add(attr("residence_shipping", IS_RESIDENCE_SHIPPING, RESIDENCE_SHIPPING_LABEL));
         addr.put("customAttributes", customAttributes);
 
-        // campos alternates como na UI
         addr.put("altFirstName", "");
         addr.put("altLastName", "");
         addr.put("altPhoneNumber", "");
@@ -400,8 +404,6 @@ public class EssendantE2ETest extends BaseTest {
     }
 
     private Map<String, Object> buildPaymentBillingAddress() {
-        // Estrutura do billingAddress dentro do paymentData (Step 7),
-        // que inclui address/addressTwo além dos campos comuns. :contentReference[oaicite:6]{index=6}
         Map<String, Object> addr = buildQuoteAddress(false);
         addr.put("address", STREET_LINE_1);
         addr.put("addressTwo", STREET_LINE_2);

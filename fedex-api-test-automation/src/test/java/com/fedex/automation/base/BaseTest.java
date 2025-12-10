@@ -12,6 +12,7 @@ import io.restassured.http.Header;
 import io.restassured.response.Response;
 import io.restassured.specification.FilterableRequestSpecification;
 import io.restassured.specification.FilterableResponseSpecification;
+import io.restassured.specification.RequestSpecification;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Value;
@@ -34,7 +35,14 @@ public class BaseTest {
 
     protected final CookieFilter cookieFilter = new CookieFilter();
     protected final ObjectMapper objectMapper = new ObjectMapper();
+
+    /**
+     * Magento form_key used for CSRF validation.
+     * We extract it from the cart page and also send it as a cookie when needed.
+     */
     protected String formKey;
+
+    protected final Filter curlLoggingFilter = new CurlLoggingFilter();
 
     private static final Pattern FORM_KEY_INPUT_PATTERN =
             Pattern.compile("form_key\"\\s+type=\"hidden\"\\s+value=\"([^\"]+)\"");
@@ -47,90 +55,63 @@ public class BaseTest {
         RestAssured.useRelaxedHTTPSValidation();
     }
 
+    /**
+     * Base RestAssured spec carrying cookies captured so far.
+     */
+    protected RequestSpecification givenBase() {
+        return given()
+                .filter(cookieFilter)
+                .filter(curlLoggingFilter);
+    }
+
+    /**
+     * RestAssured spec that also forces the form_key cookie when available.
+     * This helps align the automation with the browser request behavior.
+     */
+    protected RequestSpecification givenWithSession() {
+        RequestSpecification spec = givenBase();
+        if (formKey != null && !formKey.isBlank()) {
+            spec.cookie("form_key", formKey);
+        }
+        return spec;
+    }
+
+    /**
+     * Initializes session cookies and extracts form_key from the cart page.
+     */
     protected void bootstrapSession() {
         log.info("--- [Step 0] Initializing Session (Bootstrap) ---");
 
-        Response response = given()
-                .filter(cookieFilter)
-                .filter(new CurlLoggingFilter())
+        Response response = givenBase()
                 .get("/default/checkout/cart/");
 
         String html = response.getBody().asString();
 
-        Matcher m = FORM_KEY_INPUT_PATTERN.matcher(html);
-        if (m.find()) {
-            this.formKey = m.group(1);
+        Matcher inputMatcher = FORM_KEY_INPUT_PATTERN.matcher(html);
+        if (inputMatcher.find()) {
+            this.formKey = inputMatcher.group(1);
+            log.info("Form key extracted from hidden input.");
             return;
         }
 
-        Matcher m2 = FORM_KEY_JSON_PATTERN.matcher(html);
-        if (m2.find()) {
-            this.formKey = m2.group(1);
+        Matcher jsonMatcher = FORM_KEY_JSON_PATTERN.matcher(html);
+        if (jsonMatcher.find()) {
+            this.formKey = jsonMatcher.group(1);
+            log.info("Form key extracted from JSON config.");
+            return;
         }
+
+        log.warn("Form key was not found on the cart page response.");
     }
 
-    protected String fetchEncryptionKey() {
-        log.info("--- Fetching Encryption Key from API ---");
-
-        // The JS calls "delivery/index/encryptionkey" via urlBuilder
-        // Assuming your baseUrl is the domain, we prepend /default/
-        String endpoint = "/default/delivery/index/encryptionkey";
-
-        Response response = given()
-                .filter(cookieFilter) // Uses the session cookies
-                .filter(new CurlLoggingFilter())
-                .header("X-Requested-With", "XMLHttpRequest") // Good practice for Magento AJAX calls
-                .get(endpoint)
-                .then()
-                .statusCode(200)
-                .extract().response();
-
-        // The JS accesses it via: data.encryption.key
-        String key = response.jsonPath().getString("encryption.key");
-
-        if (key == null || key.isEmpty()) {
-            throw new RuntimeException("Encryption key not found in API response: " + response.asString());
-        }
-
-        log.info("Fetched Public Key successfully");
-        return key;
-    }
-
-    protected String getPublicKeyFromCheckoutConfig() {
-        Response response = given()
-                .filter(cookieFilter)
-                .get("/default/checkout/");
-
-        String html = response.getBody().asString();
-
-        // DEBUG: Print the response to see if we are on the right page
-        if (!html.contains("window.checkoutConfig")) {
-            log.error("'window.checkoutConfig' NOT FOUND. Current URL might be a redirect.");
-            log.info("Response HTML Snippet: " + html.substring(0, Math.min(html.length(), 500)));
-        } else {
-            log.info("Found checkoutConfig object.");
-        }
-
-        // Try a more flexible regex (handles spaces/quotes)
-        java.util.regex.Pattern p = java.util.regex.Pattern.compile("[\"']cc_encryption_key[\"']\\s*:\\s*[\"']([^\"']+)[\"']");
-        java.util.regex.Matcher m = p.matcher(html);
-
-        if (m.find()) {
-            String key = m.group(1).replace("\\n", "");
-            log.info("Found Public Key: " + key.substring(0, 20) + "...");
-            return key;
-        }
-
-        // Fail hard if not found
-        throw new RuntimeException("Could not find cc_encryption_key in HTML. Check logs for response content.");
-    }
-
+    /**
+     * Reads the cart page and extracts cart context for the target SKU.
+     * This method expects bootstrapSession() to have been called.
+     */
     protected CartContext scrapeCartContext(String targetSku) {
         log.info("--- Extracting Cart data for SKU: {} ---", targetSku);
 
-        Response response = given()
-                .filter(cookieFilter)
-                .filter(new CurlLoggingFilter())
+        Response response = givenWithSession()
                 .get("/default/checkout/cart/");
 
         String html = response.getBody().asString();
@@ -143,7 +124,8 @@ public class BaseTest {
         try {
             JsonNode root = objectMapper.readTree(jsonString);
             JsonNode quoteItemData = root.path("quoteItemData");
-            String quoteId = root.path("quoteData").path("entity_id").asText();
+
+            String maskedQuoteId = root.path("quoteData").path("entity_id").asText();
             String realQuoteId = (!quoteItemData.isEmpty())
                     ? quoteItemData.get(0).path("quote_id").asText()
                     : "";
@@ -168,7 +150,7 @@ public class BaseTest {
             return CartContext.builder()
                     .formKey(this.formKey)
                     .quoteId(realQuoteId)
-                    .maskedQuoteId(quoteId)
+                    .maskedQuoteId(maskedQuoteId)
                     .itemId(itemId)
                     .qty(qty)
                     .build();
@@ -179,6 +161,9 @@ public class BaseTest {
         }
     }
 
+    /**
+     * Extracts window.checkoutConfig JSON content from the cart HTML.
+     */
     private String extractJsonConfig(String html) {
         String marker = "window.checkoutConfig =";
         int startIndex = html.indexOf(marker);
@@ -191,8 +176,9 @@ public class BaseTest {
 
         for (int i = openBraceIndex; i < html.length(); i++) {
             char c = html.charAt(i);
-            if (c == '{') braceCount++;
-            else if (c == '}') {
+            if (c == '{') {
+                braceCount++;
+            } else if (c == '}') {
                 braceCount--;
                 if (braceCount == 0) {
                     return html.substring(openBraceIndex, i + 1);
@@ -202,6 +188,34 @@ public class BaseTest {
         return null;
     }
 
+    /**
+     * Fetches the payment encryption public key from the server.
+     */
+    protected String fetchEncryptionKey() {
+        log.info("--- Fetching Encryption Key from API ---");
+
+        String endpoint = "/default/delivery/index/encryptionkey";
+        Response response = givenWithSession()
+                .header("X-Requested-With", "XMLHttpRequest")
+                .header("Accept", "*/*")
+                .get(endpoint)
+                .then()
+                .statusCode(200)
+                .extract()
+                .response();
+
+        String key = response.jsonPath().getString("encryption.key");
+        if (key == null || key.isBlank()) {
+            throw new RuntimeException("Encryption key not found in API response: " + response.asString());
+        }
+
+        log.info("Fetched public key successfully.");
+        return key;
+    }
+
+    /**
+     * Debug-only filter to print a runnable curl reproduction command.
+     */
     public static class CurlLoggingFilter implements Filter {
 
         private final ObjectMapper mapper = new ObjectMapper();
@@ -215,7 +229,6 @@ public class BaseTest {
             curl.append("curl -v -X ").append(requestSpec.getMethod()).append(" \\\n");
             curl.append("  '").append(requestSpec.getURI()).append("' \\\n");
 
-            // Headers (evita duplicar Cookie, já que imprimimos -b)
             for (Header header : requestSpec.getHeaders()) {
                 if ("Cookie".equalsIgnoreCase(header.getName())) {
                     continue;
@@ -227,19 +240,19 @@ public class BaseTest {
                         .append("' \\\n");
             }
 
-            // Cookies
             var cookies = requestSpec.getCookies();
             if (cookies != null && !cookies.asList().isEmpty()) {
                 curl.append("  -b '");
                 for (Cookie cookie : cookies.asList()) {
-                    curl.append(cookie.getName()).append("=")
-                            .append(cookie.getValue()).append("; ");
+                    curl.append(cookie.getName())
+                            .append("=")
+                            .append(cookie.getValue())
+                            .append("; ");
                 }
                 curl.setLength(curl.length() - 2);
                 curl.append("' \\\n");
             }
 
-            // Body tem prioridade
             if (requestSpec.getBody() != null) {
                 try {
                     String bodyStr = (requestSpec.getBody() instanceof String)
@@ -249,20 +262,16 @@ public class BaseTest {
                     curl.append("  --data-raw '")
                             .append(escapeSingleQuotes(bodyStr))
                             .append("'");
-
                 } catch (Exception e) {
                     curl.append("  # [Error serializing body]");
                 }
-            }
-            // Form params no estilo DevTools: key=value&key=value
-            else if (requestSpec.getFormParams() != null && !requestSpec.getFormParams().isEmpty()) {
+            } else if (requestSpec.getFormParams() != null && !requestSpec.getFormParams().isEmpty()) {
 
                 StringBuilder sb = new StringBuilder();
                 for (Map.Entry<String, ?> entry : requestSpec.getFormParams().entrySet()) {
                     appendFormParamPairs(sb, entry.getKey(), entry.getValue());
                 }
 
-                // remove último &
                 if (!sb.isEmpty() && sb.charAt(sb.length() - 1) == '&') {
                     sb.setLength(sb.length() - 1);
                 }
@@ -277,8 +286,8 @@ public class BaseTest {
         }
 
         /**
-         * Expande multi-values (Iterable/array) para repetir a chave.
-         * Ex.: street[]=A & street[]=
+         * Expands multi-values (Iterable/array) to repeat the key.
+         * Example: street[]=A & street[]=
          */
         private static void appendFormParamPairs(StringBuilder sb, String key, Object value) {
             if (value == null) {

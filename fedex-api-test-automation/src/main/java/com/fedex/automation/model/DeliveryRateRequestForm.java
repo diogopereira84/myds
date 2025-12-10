@@ -33,7 +33,7 @@ public class DeliveryRateRequestForm {
     private String city;
 
     /**
-     * No form real, isso vira street[]=A & street[]=
+     * In the real form, this becomes street[]=A & street[]=
      */
     @Builder.Default
     private List<String> street = new ArrayList<>();
@@ -44,8 +44,8 @@ public class DeliveryRateRequestForm {
     private Boolean isResidenceShipping;
 
     /**
-     * Este campo no form é uma string JSON.
-     * Mantemos como objeto e serializamos no client.
+     * This field in the form is a JSON string.
+     * We keep it as an object and serialize it in the client.
      */
     @JsonProperty("ship_method_data")
     private EstimateShipMethodResponse shipMethodData;

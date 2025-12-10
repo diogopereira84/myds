@@ -59,7 +59,7 @@ public class EstimateShipMethodResponse {
     private String shippingTypeLabel;
 
     /**
-     * Geralmente string humana no Magento
+     * Usually human-readable string in Magento
      */
     @JsonProperty("deliveryDate")
     private String deliveryDate;
@@ -138,7 +138,7 @@ public class EstimateShipMethodResponse {
         private String attributeCode;
 
         /**
-         * Pode vir String/Boolean/etc
+         * Can be String/Boolean/etc
          */
         private Object value;
 
