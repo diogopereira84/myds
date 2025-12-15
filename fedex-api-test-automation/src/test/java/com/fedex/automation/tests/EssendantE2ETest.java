@@ -9,7 +9,9 @@ import io.restassured.http.ContentType;
 import io.restassured.response.Response;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import com.fedex.automation.service.CatalogService;
 
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
@@ -20,8 +22,10 @@ import static org.junit.jupiter.api.Assertions.*;
 @Slf4j
 public class EssendantE2ETest extends BaseTest {
 
-    @Value("${test.product.sku}")
-    private String sku;
+
+    // Inject the new service
+    @Autowired
+    private CatalogService catalogService;
 
     @Value("${test.product.offer_id}")
     private String offerId;
@@ -73,18 +77,28 @@ public class EssendantE2ETest extends BaseTest {
     private static final String CVV = "345";
     private static final String CREDIT_CARD_TYPE_URL = "https://dev.office.fedex.com/media/wysiwyg/Visa.png";
 
+    // Product cart details
+    private static final String PRODUCT_NAME = "ACCO Metal Book Rings, 1.5 in. Diameter, 100/Box";
+    private static final String PRODUCT_QTY = "1";
+
     @Test
     public void testEssendantAddUpdateCheckoutFlow() throws Exception {
         // --- Step 0: Bootstrap ---
         bootstrapSession();
+
+        // Dynamic Search Step
+        // This ensures the test works even if the SKU changes, as long as the name stays consistent.
+        String sku = catalogService.searchProductSku(PRODUCT_NAME);
+
         assertNotNull(formKey, "Form key must be available after bootstrap");
+        assertNotNull(sku, "SKU must be available after catalog search");
 
         // --- Step 1: Add to Cart ---
-        log.info("--- [Step 1] Add to Cart ---");
+        log.info("--- [Step 1] Add to Cart SKU: {} ---", sku);
         Map<String, String> addParams = new HashMap<>();
         addParams.put("form_key", formKey);
         addParams.put("sku", sku);
-        addParams.put("qty", "1");
+        addParams.put("qty", PRODUCT_QTY);
         addParams.put("offer_id", offerId);
         addParams.put("punchout_disabled", "1");
         addParams.put("super_attribute", "");

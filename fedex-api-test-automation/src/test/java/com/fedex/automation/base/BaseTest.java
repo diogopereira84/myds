@@ -15,6 +15,7 @@ import io.restassured.specification.FilterableResponseSpecification;
 import io.restassured.specification.RequestSpecification;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.BeforeEach;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 
@@ -34,7 +35,8 @@ public class BaseTest {
     protected String baseUrl;
 
     protected final CookieFilter cookieFilter = new CookieFilter();
-    protected final ObjectMapper objectMapper = new ObjectMapper();
+    @Autowired
+    protected ObjectMapper objectMapper;
 
     /**
      * Magento form_key used for CSRF validation.
