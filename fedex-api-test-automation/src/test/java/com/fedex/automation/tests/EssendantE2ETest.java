@@ -11,7 +11,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Value;
 
-import java.net.URLEncoder;
+import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 
@@ -44,40 +44,33 @@ public class EssendantE2ETest extends BaseTest {
     @Value("${endpoint.order.submit}")
     private String submitOrderEndpoint;
 
+    // --- Test Data Constants ---
     private static final String STREET_LINE_1 = "550 PEACHTREE ST NE";
     private static final String STREET_LINE_2 = "";
-    private static final String CITY = "ATLANTA";
-    private static final String REGION_ID = "55";
-    private static final String REGION_CODE = "GA";
+    private static final String CITY = "Los Angeles";
+    private static final String REGION_ID = "34";
+    private static final String REGION_CODE = "CA";
     private static final String COUNTRY_ID = "US";
-    private static final String POSTCODE = "30308";
+    private static final String POSTCODE = "90002";
     private static final String FIRST_NAME = "Diogo";
     private static final String LAST_NAME = "Pereira";
     private static final String COMPANY = "";
-    private static final String TELEPHONE = "5524654547";
+    private static final String TELEPHONE = "4247021234";
     private static final String TELEPHONE_EXT = "";
     private static final String EMAIL_ID = "dpereira@mcfadyen.com";
+    private static final String RESIDENCE_SHIPPING_LABEL = "No";
+    private static final boolean IS_RESIDENCE_SHIPPING = false;
 
-    // --- FIX 1: Align Residence Flags with UI (Must be TRUE/YES for this test context) ---
-    private static final String RESIDENCE_SHIPPING_LABEL = "Yes";
-    private static final boolean IS_RESIDENCE_SHIPPING = true;
-
-    // Aligned with UI
     private static final String PREFERRED_THIRD_PARTY_CARRIER_CODE = "marketplace_2941";
     private static final String PREFERRED_METHOD_CODE = "FREE_GROUND_US";
 
-    // Dummy card data (as in UI)
     private static final String PAYMENT_METHOD = "cc";
     private static final String CARD_YEAR = "2035";
     private static final String CARD_EXPIRE = "02";
-    private static final String NAME_ON_CARD = "RALPH";
-
-    // Raw number for encryption only
-    private static final String RAW_CARD_NUMBER = "4111111111111111";
-    // --- FIX 2: Masked number for the JSON payload ---
-    private static final String MASKED_CARD_NUMBER = "*1111";
-
-    private static final String CVV = "471";
+    private static final String NAME_ON_CARD = "DIOGO";
+    private static final String RAW_CARD_NUMBER = "4111111111111111"; // Real PAN for encryption
+    private static final String MASKED_CARD_NUMBER = "*1111";       // Masked for payload
+    private static final String CVV = "345";
     private static final String CREDIT_CARD_TYPE_URL = "https://dev.office.fedex.com/media/wysiwyg/Visa.png";
 
     @Test
@@ -104,43 +97,25 @@ public class EssendantE2ETest extends BaseTest {
                 .then()
                 .extract().response();
 
+        // ASSERTIONS STEP 1
         assertEquals(302, addResponse.statusCode(), "Add to cart should redirect (302)");
-        log.info("Item added to cart successfully. Status: {}", addResponse.statusCode());
+        log.info("Item added to cart successfully.");
 
         // --- Step 2: Scrape Cart ---
         log.info("--- [Step 2] Scrape Cart ---");
         CartContext cartData = scrapeCartContext(sku);
 
+        // ASSERTIONS STEP 2
         assertNotNull(cartData, "Cart context should not be null");
         assertEquals(1, cartData.getQty(), "Cart quantity should be 1");
+        assertNotNull(cartData.getQuoteId(), "Quote ID must be present in cart data");
         log.info("Cart scraped. Item ID: {}, Quote ID: {}", cartData.getItemId(), cartData.getQuoteId());
 
         // --- Step 3: Estimate Shipping ---
         log.info("--- [Step 3] Estimate Shipping ---");
         String dynamicEstimateUrl = estimateEndpoint.replace("{cartId}", cartData.getMaskedQuoteId());
 
-        Address address = Address.builder()
-                .street(Arrays.asList(STREET_LINE_1, STREET_LINE_2))
-                .city(CITY)
-                .regionId(REGION_ID)
-                .region(REGION_CODE)
-                .countryId(COUNTRY_ID)
-                .postcode(POSTCODE)
-                .firstname(FIRST_NAME)
-                .lastname(LAST_NAME)
-                .company(COMPANY)
-                .telephone(TELEPHONE)
-                .customAttributes(Arrays.asList(
-                        CustomAttribute.builder().attributeCode("email_id").value(EMAIL_ID).build(),
-                        CustomAttribute.builder().attributeCode("ext").value(TELEPHONE_EXT).build(),
-                        CustomAttribute.builder()
-                                .attributeCode("residence_shipping")
-                                .value(IS_RESIDENCE_SHIPPING) // Uses TRUE
-                                .label(RESIDENCE_SHIPPING_LABEL) // Uses "Yes"
-                                .build()
-                ))
-                .build();
-
+        Address address = buildAddress();
         EstimateShippingRequest estimateRequest = EstimateShippingRequest.builder()
                 .pickup(false)
                 .isPickup(false)
@@ -160,15 +135,17 @@ public class EssendantE2ETest extends BaseTest {
                 .extract()
                 .response();
 
-        EstimateShipMethodResponse[] shippingMethods =
-                estimateRawResponse.as(EstimateShipMethodResponse[].class);
+        EstimateShipMethodResponse[] shippingMethods = estimateRawResponse.as(EstimateShipMethodResponse[].class);
 
+        // ASSERTIONS STEP 3
         assertNotNull(shippingMethods, "Estimate response should not be null");
         assertTrue(shippingMethods.length > 0, "Estimate should return at least one method");
-        log.info("Shipping methods estimated: {}", shippingMethods.length);
 
         EstimateShipMethodResponse chosenMethod = selectPreferredMethod(shippingMethods);
         log.info("Selected shipping method: {} ({})", chosenMethod.getMethodCode(), chosenMethod.getCarrierCode());
+
+        // Ensure we actually found the method we wanted to test
+        assertEquals(PREFERRED_METHOD_CODE, chosenMethod.getMethodCode(), "Should have selected the preferred shipping method");
 
         String shipMethodDataJson = extractShipMethodDataJson(estimateRawResponse, chosenMethod);
 
@@ -205,24 +182,28 @@ public class EssendantE2ETest extends BaseTest {
 
         JsonNode step4Root = objectMapper.readTree(rawRateResponse.asString());
         JsonNode rateQuoteNode = step4Root.get("rateQuote");
+
+        // ASSERTIONS STEP 4
         assertNotNull(rateQuoteNode, "Step 4 must return 'rateQuote' object");
-        log.info("Delivery rate verified.");
+        JsonNode firstQuoteDetail = rateQuoteNode.path("rateQuoteDetails").get(0);
+        double totalAmount = firstQuoteDetail.path("totalAmount").asDouble();
+        assertTrue(totalAmount > 0, "Total amount should be greater than 0");
+        log.info("Delivery rate verified. Total Amount: {}", totalAmount);
 
         // --- Step 5: Create Quote ---
         log.info("--- [Step 5] Create Quote ---");
         String rateQuoteString = objectMapper.writeValueAsString(rateQuoteNode);
         JsonNode shippingDetailNode = objectMapper.readTree(shipMethodDataJson);
 
-        Map<String, Object> shippingAddress = buildQuoteAddress(false);
-        Map<String, Object> billingAddress = buildQuoteAddress(true);
+        Map<String, Object> shippingAddressMap = buildQuoteAddress(false);
+        Map<String, Object> billingAddressMap = buildQuoteAddress(true);
 
         Map<String, Object> addressInformation = new LinkedHashMap<>();
-        addressInformation.put("shipping_address", shippingAddress);
-        addressInformation.put("billing_address", billingAddress);
+        addressInformation.put("shipping_address", shippingAddressMap);
+        addressInformation.put("billing_address", billingAddressMap);
         addressInformation.put("shipping_method_code", chosenMethod.getMethodCode());
         addressInformation.put("shipping_carrier_code", chosenMethod.getCarrierCode());
-        addressInformation.put("shipping_detail",
-                objectMapper.convertValue(shippingDetailNode, Map.class));
+        addressInformation.put("shipping_detail", objectMapper.convertValue(shippingDetailNode, Map.class));
 
         Map<String, Object> quotePayload = new LinkedHashMap<>();
         quotePayload.put("addressInformation", addressInformation);
@@ -240,9 +221,9 @@ public class EssendantE2ETest extends BaseTest {
                 .extract()
                 .response();
 
+        // ASSERTIONS STEP 5
         String quoteRespString = createQuoteResponse.asString();
-        assertFalse(quoteRespString.toLowerCase().contains("exception"),
-                "Quote creation should not return exceptions");
+        assertFalse(quoteRespString.toLowerCase().contains("exception"), "Quote creation should not return exceptions");
         log.info("Quote successfully created/updated.");
 
         // --- Step 6: Pay Rate API ---
@@ -262,39 +243,34 @@ public class EssendantE2ETest extends BaseTest {
                 .extract()
                 .response();
 
+        // ASSERTIONS STEP 6
         assertNotNull(payRateResponse.body(), "PayRate response should not be null");
         log.info("Pay Rate API called successfully.");
 
         // --- Step 7: Submit Order ---
         log.info("--- [Step 7] Submit Order ---");
 
+        // 1. FETCH DYNAMIC KEY
         String publicKeyPEM = fetchEncryptionKey();
-        assertNotNull(publicKeyPEM, "Public key must be fetched for encryption");
 
-        // --- CRITICAL: Encrypt using the RAW card number ---
-        String rawEncCCData = FedExEncryptionUtil.encryptCreditCard(
-                RAW_CARD_NUMBER,
-                CARD_EXPIRE,
-                CARD_YEAR,
-                CVV,
-                publicKeyPEM
+        // 2. ENCRYPT
+        String encryptedButEncoded = FedExEncryptionUtil.encryptCreditCard(
+                RAW_CARD_NUMBER, CARD_EXPIRE, CARD_YEAR, CVV, publicKeyPEM
         );
 
-        // URL-encode the standard Base64 output so it matches the UI format
-        String finalEncCCData = URLEncoder.encode(rawEncCCData, StandardCharsets.UTF_8);
+        // 3. FIX: DECODE IT BACK TO RAW
+        String rawEncryptedData = URLDecoder.decode(encryptedButEncoded, StandardCharsets.UTF_8);
+        log.info("FIXED Raw Data: {}", rawEncryptedData);
 
+        // 4. BUILD PAYLOAD
         Map<String, Object> paymentBillingAddress = buildPaymentBillingAddress();
-
         Map<String, Object> paymentData = new LinkedHashMap<>();
         paymentData.put("loginValidationKey", "");
         paymentData.put("paymentMethod", PAYMENT_METHOD);
         paymentData.put("year", CARD_YEAR);
         paymentData.put("expire", CARD_EXPIRE);
         paymentData.put("nameOnCard", NAME_ON_CARD);
-
-        // --- CRITICAL: Payload uses MASKED number ---
         paymentData.put("number", MASKED_CARD_NUMBER);
-
         paymentData.put("cvv", CVV);
         paymentData.put("isBillingAddress", false);
         paymentData.put("isFedexAccountApplied", false);
@@ -303,69 +279,111 @@ public class EssendantE2ETest extends BaseTest {
         paymentData.put("billingAddress", paymentBillingAddress);
 
         String paymentDataString = objectMapper.writeValueAsString(paymentData);
-
         Map<String, Object> submitPayload = new LinkedHashMap<>();
         submitPayload.put("paymentData", paymentDataString);
-        submitPayload.put("encCCData", finalEncCCData);
+        submitPayload.put("encCCData", rawEncryptedData);
         submitPayload.put("pickupData", null);
         submitPayload.put("useSiteCreditCard", false);
         submitPayload.put("selectedProductionId", null);
         submitPayload.put("g-recaptcha-response", "");
 
+        String jsonData = objectMapper.writeValueAsString(submitPayload);
+
+        // 5. SEND REQUEST
         Response submitOrderResponse = givenWithSession()
+                .cookie("quoteId", cartData.getQuoteId()) // Explicitly inject Quote ID cookie
                 .contentType("application/x-www-form-urlencoded; charset=UTF-8")
                 .header("X-Requested-With", "XMLHttpRequest")
-                .header("Origin", baseUrl)
                 .header("Referer", baseUrl + "/default/checkout")
-                .header("Accept", "application/json, text/javascript, */*; q=0.01")
+                .header("Origin", baseUrl)
                 .queryParam("pickstore", "0")
-                .formParam("data", objectMapper.writeValueAsString(submitPayload))
+                .formParam("data", jsonData)
                 .post(submitOrderEndpoint)
                 .then()
                 .statusCode(200)
                 .extract()
                 .response();
 
-        log.info("Step 7 response:\n{}", submitOrderResponse.asPrettyString());
-
         String submitBody = submitOrderResponse.asString();
-        assertFalse(submitBody.contains("\"error\":true"), "Order submission returned an error");
-        assertFalse(submitBody.contains("\"success\":false"), "Order submission success flag is false");
-        log.info("Order submitted successfully. Response length: {}", submitBody.length());
+        log.info("Step 7 response received. Length: {}", submitBody.length());
+
+        // --- FINAL VALIDATION ---
+
+        // 1. Parse Outer JSON
+        JsonNode outerRoot = objectMapper.readTree(submitBody);
+
+        // 2. Check for "unified_data_layer" (Easiest way to verify Order Number)
+        JsonNode dataLayer = outerRoot.get("unified_data_layer");
+        assertNotNull(dataLayer, "Response must contain 'unified_data_layer'");
+
+        String orderNumber = dataLayer.path("orderNumber").asText();
+        assertNotNull(orderNumber, "Order number must be present");
+        assertFalse(orderNumber.isEmpty(), "Order number must not be empty");
+        log.info("SUCCESS! Order Placed. Order Number: {}", orderNumber);
+
+        // 3. Verify Payment Authorization in the nested JSON string
+        // The server response structure is: { "0": { "0": "{\"transactionId\"...}" } }
+        String innerJsonString = outerRoot.path("0").path("0").asText();
+        assertNotNull(innerJsonString, "Inner Order JSON string should exist");
+
+        JsonNode innerRoot = objectMapper.readTree(innerJsonString);
+        String authResponse = innerRoot.path("output")
+                .path("checkout")
+                .path("tenders")
+                .get(0)
+                .path("creditCard")
+                .path("authResponse")
+                .asText();
+
+        assertEquals("APPROVED", authResponse, "Payment must be APPROVED");
+
+        log.info("Payment Authorized: YES");
+    }
+
+    // --- Helper Methods ---
+
+    private Address buildAddress() {
+        return Address.builder()
+                .street(Arrays.asList(STREET_LINE_1, STREET_LINE_2))
+                .city(CITY)
+                .regionId(REGION_ID)
+                .region(REGION_CODE)
+                .countryId(COUNTRY_ID)
+                .postcode(POSTCODE)
+                .firstname(FIRST_NAME)
+                .lastname(LAST_NAME)
+                .company(COMPANY)
+                .telephone(TELEPHONE)
+                .customAttributes(Arrays.asList(
+                        CustomAttribute.builder().attributeCode("email_id").value(EMAIL_ID).build(),
+                        CustomAttribute.builder().attributeCode("ext").value(TELEPHONE_EXT).build(),
+                        CustomAttribute.builder().attributeCode("residence_shipping").value(IS_RESIDENCE_SHIPPING).label(RESIDENCE_SHIPPING_LABEL).build()
+                ))
+                .build();
     }
 
     private EstimateShipMethodResponse selectPreferredMethod(EstimateShipMethodResponse[] methods) {
-        Optional<EstimateShipMethodResponse> exact =
-                Arrays.stream(methods)
-                        .filter(m -> PREFERRED_METHOD_CODE.equals(m.getMethodCode()))
-                        .filter(m -> PREFERRED_THIRD_PARTY_CARRIER_CODE.equals(m.getCarrierCode()))
-                        .findFirst();
-
-        if (exact.isPresent()) return exact.get();
-
-        Optional<EstimateShipMethodResponse> byMethod =
-                Arrays.stream(methods)
-                        .filter(m -> PREFERRED_METHOD_CODE.equals(m.getMethodCode()))
-                        .findFirst();
-
-        return byMethod.orElse(methods[0]);
+        Optional<EstimateShipMethodResponse> exact = Arrays.stream(methods)
+                .filter(m -> PREFERRED_METHOD_CODE.equals(m.getMethodCode()))
+                .filter(m -> PREFERRED_THIRD_PARTY_CARRIER_CODE.equals(m.getCarrierCode()))
+                .findFirst();
+        return exact.orElse(Arrays.stream(methods)
+                .filter(m -> PREFERRED_METHOD_CODE.equals(m.getMethodCode()))
+                .findFirst()
+                .orElse(methods[0]));
     }
 
     private String extractShipMethodDataJson(Response estimateRaw, EstimateShipMethodResponse chosen) throws Exception {
         JsonNode root = objectMapper.readTree(estimateRaw.asString());
-
         if (root != null && root.isArray()) {
             for (JsonNode n : root) {
                 String method = n.path("method_code").asText(null);
                 String carrier = n.path("carrier_code").asText(null);
-
-                if (Objects.equals(method, chosen.getMethodCode())
-                        && Objects.equals(carrier, chosen.getCarrierCode())) {
+                if (Objects.equals(method, chosen.getMethodCode()) && Objects.equals(carrier, chosen.getCarrierCode())) {
                     return objectMapper.writeValueAsString(n);
                 }
             }
         }
-
         return objectMapper.writeValueAsString(chosen);
     }
 
@@ -399,7 +417,6 @@ public class EssendantE2ETest extends BaseTest {
         if (isBilling) {
             addr.put("saveInAddressBook", null);
         }
-
         return addr;
     }
 
