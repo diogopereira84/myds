@@ -3,6 +3,7 @@ package com.fedex.automation.service.fedex;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fedex.automation.model.CartContext;
+import com.fedex.automation.service.mirakl.OfferService;
 import io.restassured.http.ContentType;
 import io.restassured.response.Response;
 import lombok.RequiredArgsConstructor;
@@ -23,33 +24,33 @@ public class CartService {
 
     private final SessionService sessionService;
     private final ObjectMapper objectMapper;
-    private final CatalogService catalogService;
 
     @Value("${endpoint.cart.add}")
     private String addEndpoint;
 
-    @Value("${test.product.offer_id}")
-    private String offerId;
-
-    public void addToCart(String sku, String qty) {
+    public void addToCart(String sku, String qty, String offerId) {
 
         log.info("Adding SKU {} to cart...", sku);
 
+
+
+        // 2. Prepare Form Data
         Map<String, String> params = new HashMap<>();
         params.put("form_key", sessionService.getFormKey());
         params.put("sku", sku);
         params.put("qty", qty);
-        params.put("offer_id", offerId);
+        params.put("offer_id", offerId); // Use dynamic ID
         params.put("punchout_disabled", "1");
         params.put("super_attribute", "");
 
+        // 3. Send Request
         Response response = sessionService.authenticatedRequest()
                 .contentType(ContentType.URLENC)
                 .header("X-Requested-With", "XMLHttpRequest")
                 .formParams(params)
                 .post(addEndpoint);
 
-        assertEquals(302, response.statusCode(), "Add to cart should redirect");
+        assertEquals(302, response.statusCode(), "Add to cart should redirect (302)");
     }
 
     public CartContext scrapeCartContext(String targetSku) {
@@ -71,13 +72,13 @@ public class CartService {
             String realQuoteId = (!quoteItemData.isEmpty()) ? quoteItemData.get(0).path("quote_id").asText() : "";
 
             String itemId = null;
-            int qty = 0; // Initialize qty
+            int qty = 0;
 
             if (quoteItemData.isArray()) {
                 for (JsonNode item : quoteItemData) {
                     if (targetSku.equals(item.path("sku").asText())) {
                         itemId = item.path("item_id").asText();
-                        qty = item.path("qty").asInt(); // <--- FIX: Extract quantity here
+                        qty = item.path("qty").asInt();
                         break;
                     }
                 }
@@ -92,7 +93,7 @@ public class CartService {
                     .quoteId(realQuoteId)
                     .maskedQuoteId(maskedQuoteId)
                     .itemId(itemId)
-                    .qty(qty) // <--- FIX: Set quantity in builder
+                    .qty(qty)
                     .build();
 
         } catch (Exception e) {
@@ -100,9 +101,6 @@ public class CartService {
         }
     }
 
-    /**
-     * Extracts the JSON object by counting braces to ensure nested objects are handled correctly.
-     */
     private String extractJsonConfig(String html) {
         String marker = "window.checkoutConfig =";
         int startIndex = html.indexOf(marker);

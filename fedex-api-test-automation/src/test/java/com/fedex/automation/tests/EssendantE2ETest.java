@@ -8,6 +8,7 @@ import com.fedex.automation.service.fedex.CartService;
 import com.fedex.automation.service.fedex.CatalogService;
 import com.fedex.automation.service.fedex.CheckoutService;
 import com.fedex.automation.service.fedex.SessionService;
+import com.fedex.automation.service.mirakl.OfferService;
 import com.fedex.automation.utils.FedExEncryptionUtil;
 import com.fedex.automation.utils.TestDataFactory;
 import lombok.extern.slf4j.Slf4j;
@@ -30,6 +31,8 @@ public class EssendantE2ETest extends BaseTest {
     private CartService cartService;
     @Autowired
     private CheckoutService checkoutService;
+    @Autowired
+    private OfferService offerService;
     @Autowired
     private ObjectMapper objectMapper;
 
@@ -54,10 +57,13 @@ public class EssendantE2ETest extends BaseTest {
         log.info("--- [Step 1] Search Product From Catalog Service ---");
         String sku = catalogService.searchProductSku(PRODUCT_NAME);
 
-        log.info("--- [Step 2] Add to Cart ---");
-        cartService.addToCart(sku, PRODUCT_QTY);
+        log.info("--- [Step 2] Get the dynamic Offer ID from Mirakl ---");
+        String offerId = offerService.getOfferIdForProduct(sku);
 
-        log.info("--- [Step 3] Scrape Cart Context ---");
+        log.info("--- [Step 3] Add to Cart ---");
+        cartService.addToCart(sku, PRODUCT_QTY, offerId);
+
+        log.info("--- [Step 4] Scrape Cart Context ---");
         CartContext cartData = cartService.scrapeCartContext(sku);
 
         log.info("Cart Scraped. QuoteID: {}, ItemID: {}, Qty: {}",
@@ -67,7 +73,7 @@ public class EssendantE2ETest extends BaseTest {
         assertNotNull(cartData.getQuoteId(), "Quote ID should not be null");
         assertFalse(cartData.getQuoteId().isEmpty(), "Quote ID should not be empty");
 
-        log.info("--- [Step 4] Estimate Shipping ---");
+        log.info("--- [Step 5] Estimate Shipping ---");
         EstimateShippingRequest estimateReq = TestDataFactory.createEstimateRequest();
 
         EstimateShipMethodResponse[] methods = checkoutService.estimateShipping(cartData.getMaskedQuoteId(), estimateReq);
@@ -78,7 +84,7 @@ public class EssendantE2ETest extends BaseTest {
 
         assertEquals(PREFERRED_METHOD_CODE, selectedMethod.getMethodCode(), "Shipping Method mismatch");
 
-        log.info("--- [Step 5] Delivery Rate ---");
+        log.info("--- [Step 6] Delivery Rate ---");
         DeliveryRateRequestForm rateForm = TestDataFactory.createRateForm(selectedMethod);
         JsonNode rateResponse = checkoutService.getDeliveryRate(rateForm);
 
@@ -95,16 +101,16 @@ public class EssendantE2ETest extends BaseTest {
             fail("Total Amount should be greater than 0. Actual: " + totalAmount);
         }
 
-        log.info("--- [Step 6] Create Quote ---");
+        log.info("--- [Step 7] Create Quote ---");
         // This method inside CheckoutService now validates that the response doesn't contain "exception"
         checkoutService.createQuote(TestDataFactory.buildQuotePayload(rateResponse, selectedMethod));
         log.info("Quote successfully created.");
 
-        log.info("--- [Step 7] Pay Rate API ---");
+        log.info("--- [Step 8] Pay Rate API ---");
         checkoutService.callPayRate();
         log.info("Pay Rate API success.");
 
-        log.info("--- [Step 8] Submit Order ---");
+        log.info("--- [Step 9] Submit Order ---");
 
         String publicKey = checkoutService.fetchEncryptionKey();
         log.info("Fetched Public Key. Length: {}", publicKey.length());
