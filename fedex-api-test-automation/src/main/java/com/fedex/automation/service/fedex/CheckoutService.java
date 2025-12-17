@@ -2,7 +2,10 @@ package com.fedex.automation.service.fedex;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fedex.automation.model.*;
+import com.fedex.automation.model.fedex.DeliveryRateRequestForm;
+import com.fedex.automation.model.fedex.EstimateShipMethodResponse;
+import com.fedex.automation.model.fedex.EstimateShippingRequest;
+import com.fedex.automation.model.fedex.SubmitOrderRequest;
 import io.restassured.http.ContentType;
 import io.restassured.response.Response;
 import lombok.RequiredArgsConstructor;

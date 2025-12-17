@@ -3,11 +3,8 @@ package com.fedex.automation.tests;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fedex.automation.base.BaseTest;
-import com.fedex.automation.model.*;
-import com.fedex.automation.service.fedex.CartService;
-import com.fedex.automation.service.fedex.CatalogService;
-import com.fedex.automation.service.fedex.CheckoutService;
-import com.fedex.automation.service.fedex.SessionService;
+import com.fedex.automation.model.fedex.*;
+import com.fedex.automation.service.fedex.*;
 import com.fedex.automation.service.mirakl.OfferService;
 import com.fedex.automation.utils.FedExEncryptionUtil;
 import com.fedex.automation.utils.TestDataFactory;
@@ -33,6 +30,9 @@ public class EssendantE2ETest extends BaseTest {
     private CheckoutService checkoutService;
     @Autowired
     private OfferService offerService;
+    @Autowired
+    private MiraklAdminTriggerService miraklAdminTriggerService;
+
     @Autowired
     private ObjectMapper objectMapper;
 
@@ -131,15 +131,19 @@ public class EssendantE2ETest extends BaseTest {
         log.info("Submit Order Response: {}", responseBody);
 
         JsonNode submitRoot = objectMapper.readTree(responseBody);
-
+        String orderNumber = null;
         if (submitRoot.has("unified_data_layer")) {
-            String orderNumber = submitRoot.path("unified_data_layer").path("orderNumber").asText();
+            orderNumber = submitRoot.path("unified_data_layer").path("orderNumber").asText();
             log.info("Order Placed Successfully! Order Number: {}", orderNumber);
             assertNotNull(orderNumber, "Order Number should be present");
             assertFalse(orderNumber.isEmpty(), "Order Number should not be empty");
         } else {
             fail("Order Submission Failed. 'unified_data_layer' not found in response: " + responseBody);
         }
+
+        log.info("--- [Step 10] Send Order to Mirakl  ---");
+        // Assuming you can get the ID:
+        miraklAdminTriggerService.triggerSendToMirakl(orderNumber);
     }
 
     private EstimateShipMethodResponse selectMethod(EstimateShipMethodResponse[] methods, String code) {

@@ -2,8 +2,7 @@ package com.fedex.automation.service.fedex;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fedex.automation.model.CartContext;
-import com.fedex.automation.service.mirakl.OfferService;
+import com.fedex.automation.model.fedex.CartContext;
 import io.restassured.http.ContentType;
 import io.restassured.response.Response;
 import lombok.RequiredArgsConstructor;

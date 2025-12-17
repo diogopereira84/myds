@@ -2,8 +2,8 @@ package com.fedex.automation.utils;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fedex.automation.model.*;
-import com.fedex.automation.model.EstimateShippingRequest.CustomAttribute;
+import com.fedex.automation.model.fedex.*;
+import com.fedex.automation.model.fedex.EstimateShippingRequest.CustomAttribute;
 
 import java.util.*;
 
