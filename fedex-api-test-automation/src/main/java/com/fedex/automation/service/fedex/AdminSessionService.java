@@ -5,6 +5,7 @@ import io.restassured.http.ContentType;
 import io.restassured.response.Response;
 import io.restassured.specification.RequestSpecification;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -30,22 +31,28 @@ public class AdminSessionService {
     @Value("${admin.password}")
     private String password;
 
+    @Autowired
+    private RequestSpecification defaultRequestSpec; // Inject
+
     private final CookieFilter adminCookieFilter = new CookieFilter();
     private String adminBearerToken;
 
-    /**
-     * 1. Logs into the Admin Panel (Browser Session)
-     */
+    // Helper to create base admin request
+    public RequestSpecification adminRequest() {
+        return given()
+                .spec(defaultRequestSpec) // <--- Applies cURL filter
+                .baseUri(baseUrl)
+                .filter(adminCookieFilter);
+    }
+
     public void bootstrapAdminSession() {
         log.info("--- [Admin] Bootstrapping Admin Session ---");
 
         String loginUrl = baseUrl + adminPath + "/admin/auth/login/";
-        Response pageResp = given().relaxedHTTPSValidation().filter(adminCookieFilter).get(loginUrl);
+        Response pageResp = adminRequest().get(loginUrl);
         String formKey = extractFormKey(pageResp.asString());
 
-        Response loginResp = given()
-                .relaxedHTTPSValidation()
-                .filter(adminCookieFilter)
+        Response loginResp = adminRequest()
                 .formParam("login[username]", username)
                 .formParam("login[password]", password)
                 .formParam("form_key", formKey)
@@ -57,9 +64,6 @@ public class AdminSessionService {
         log.info("--- [Admin] Login Successful ---");
     }
 
-    /**
-     * 2. Resolves Increment ID (e.g., 2010...) to Entity ID (e.g., 5421)
-     */
     public String resolveEntityId(String incrementId) {
         if (adminBearerToken == null) {
             getAdminBearerToken();
@@ -68,7 +72,7 @@ public class AdminSessionService {
         log.info("Resolving Entity ID for Order #{}", incrementId);
 
         Response response = given()
-                .relaxedHTTPSValidation()
+                .spec(defaultRequestSpec) // <--- Applies cURL filter
                 .baseUri(baseUrl)
                 .header("Authorization", "Bearer " + adminBearerToken)
                 .queryParam("searchCriteria[filter_groups][0][filters][0][field]", "increment_id")
@@ -87,7 +91,7 @@ public class AdminSessionService {
 
     private void getAdminBearerToken() {
         Response response = given()
-                .relaxedHTTPSValidation()
+                .spec(defaultRequestSpec) // <--- Applies cURL filter
                 .baseUri(baseUrl)
                 .contentType(ContentType.JSON)
                 .body("{\"username\": \"" + username + "\", \"password\": \"" + password + "\"}")
@@ -99,36 +103,25 @@ public class AdminSessionService {
         this.adminBearerToken = response.asString().replace("\"", "");
     }
 
-    public RequestSpecification adminRequest() {
-        return given().relaxedHTTPSValidation().baseUri(baseUrl).filter(adminCookieFilter);
-    }
-
     public String scrapeSendToMiraklUrl(String orderEntityId) {
-        // Use the Entity ID to build the URL
         String url = baseUrl + adminPath + "/sales/order/view/order_id/" + orderEntityId;
         log.info("Accessing Order Page: {}", url);
 
         Response response = adminRequest().get(url);
         String html = response.asString();
 
-        // Regex to find the Mirakl Send URL (matches escaped JSON or standard HTML)
-        // Matches: "url":"...mirakl/order/send..." OR 'url':'...mirakl/order/send...'
         Pattern p = Pattern.compile("[\"']url[\"']\\s*:\\s*[\"']([^\"']*mirakl\\\\?/order\\\\?/send[^\"']*)[\"']");
         Matcher m = p.matcher(html);
 
         if (m.find()) {
-            // Unescape the slashes (e.g., \/ -> /)
             return m.group(1).replace("\\/", "/");
         }
-
-        // Backup Regex: Look for the raw button onclick or data-url attribute
         Pattern p2 = Pattern.compile("setLocation\\(['\"]([^'\"]*mirakl/order/send[^'\"]*)['\"]\\)");
         Matcher m2 = p2.matcher(html);
         if(m2.find()) {
             return m2.group(1);
         }
-
-        throw new RuntimeException("Could not find 'Send to Mirakl' URL on page for ID " + orderEntityId + ". Is the button visible?");
+        throw new RuntimeException("Could not find 'Send to Mirakl' URL on page for ID " + orderEntityId);
     }
 
     private String extractFormKey(String html) {

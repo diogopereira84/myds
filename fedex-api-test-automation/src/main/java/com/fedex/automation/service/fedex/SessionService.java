@@ -4,6 +4,7 @@ import io.restassured.filter.cookie.CookieFilter;
 import io.restassured.specification.RequestSpecification;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -19,6 +20,9 @@ public class SessionService {
     @Value("${base.url}")
     private String baseUrl;
 
+    @Autowired
+    private RequestSpecification defaultRequestSpec; // Inject the centralized spec
+
     @Getter
     private final CookieFilter cookieFilter = new CookieFilter();
 
@@ -28,14 +32,11 @@ public class SessionService {
     private static final Pattern FORM_KEY_INPUT_PATTERN = Pattern.compile("form_key\"\\s+type=\"hidden\"\\s+value=\"([^\"]+)\"");
     private static final Pattern FORM_KEY_JSON_PATTERN = Pattern.compile("\"formKey\":\"([^\"]+)\"");
 
-    /**
-     * Provides a RequestSpecification with the active session cookies.
-     */
     public RequestSpecification authenticatedRequest() {
         RequestSpecification spec = given()
-                .relaxedHTTPSValidation() // <--- FIX: Added this to ignore SSL errors
+                .spec(defaultRequestSpec) // <--- Applies cURL filter & Relaxed SSL
                 .baseUri(baseUrl)
-                .filter(cookieFilter); // Maintains session automatically
+                .filter(cookieFilter);
 
         if (formKey != null && !formKey.isBlank()) {
             spec.cookie("form_key", formKey);
@@ -45,7 +46,6 @@ public class SessionService {
 
     public void bootstrapSession() {
         log.info("--- Initializing Session ---");
-        // This call will now use the relaxed HTTPS validation
         String html = authenticatedRequest()
                 .get("/default/checkout/cart/")
                 .getBody().asString();

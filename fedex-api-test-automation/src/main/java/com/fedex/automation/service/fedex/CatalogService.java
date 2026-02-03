@@ -5,13 +5,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fedex.automation.config.AdobeConfig;
 import io.restassured.http.ContentType;
 import io.restassured.response.Response;
+import io.restassured.specification.RequestSpecification;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import static io.restassured.RestAssured.given;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 @Slf4j
 @Service
@@ -24,10 +24,12 @@ public class CatalogService {
     @Autowired
     private ObjectMapper objectMapper;
 
+    @Autowired
+    private RequestSpecification defaultRequestSpec; // Inject
+
     public String searchProductSku(String productName) {
         log.info("--- Searching Catalog for Product: '{}' ---", productName);
 
-        // The GraphQL Query we validated
         String query = """
             {
               "query": "query productSearch($phrase: String!) { productSearch(phrase: $phrase, current_page: 1, page_size: 1) { items { productView { name sku } } } }",
@@ -38,6 +40,7 @@ public class CatalogService {
             """.formatted(productName);
 
         Response response = given()
+                .spec(defaultRequestSpec) // <--- Applies cURL filter
                 .contentType(ContentType.JSON)
                 .header("X-Api-Key", adobeConfig.getApiKey())
                 .header("Magento-Environment-Id", adobeConfig.getEnvironmentId())
@@ -53,16 +56,11 @@ public class CatalogService {
 
         try {
             JsonNode root = objectMapper.readTree(response.asString());
-
-            // Check for errors (like missing headers)
             if (root.has("errors")) {
                 throw new RuntimeException("Adobe API Error: " + root.path("errors").toPrettyString());
             }
 
-            JsonNode items = root.path("data")
-                    .path("productSearch")
-                    .path("items");
-
+            JsonNode items = root.path("data").path("productSearch").path("items");
             if (items.isEmpty()) {
                 throw new RuntimeException("No products found for phrase: " + productName);
             }

@@ -1,38 +1,45 @@
-target/
-!.mvn/wrapper/maven-wrapper.jar
-!**/src/main/**/target/
-!**/src/test/**/target/
-
-### IntelliJ IDEA ###
-.idea/modules.xml
-.idea/jarRepositories.xml
-.idea/compiler.xml
-.idea/libraries/
-*.iws
+# IntelliJ project files
+.idea/
 *.iml
-*.ipr
+*.iws
 
-### Eclipse ###
-.apt_generated
-.classpath
-.factorypath
-.project
-.settings
-.springBeans
-.sts4-cache
+# IntelliJ workspace-specific files
+.idea/workspace.xml
+.idea/tasks.xml
+.idea/dictionaries
+.idea/shelf/
 
-### NetBeans ###
-/nbproject/private/
-/nbbuild/
-/dist/
-/nbdist/
-/.nb-gradle/
-build/
-!**/src/main/**/build/
-!**/src/test/**/build/
+# IntelliJ data sources
+.idea/dataSources/
+.idea/dataSources.local.xml
 
-### VS Code ###
-.vscode/
+# IntelliJ generated content
+out/
 
-### Mac OS ###
+# User-specific IntelliJ settings
+.idea/gradle.xml
+.idea/libraries/
+
+# OS-specific junk
 .DS_Store
+Thumbs.db
+
+# Java build outputs
+target/
+build/
+
+# Logs
+*.log
+
+# Maven
+.mvn/wrapper/maven-wrapper.jar
+
+# Gradle
+.gradle/
+!gradle-wrapper.jar
+
+# Kotlin
+*.kotlin_module
+
+# Virtual machine crash logs
+hs_err_pid*
