@@ -17,5 +17,9 @@ Feature: Essendant Product Checkout Flow
     Examples:
       | itemsCount | productName                                                                    | quantity | shippingMethod   |
       | 1          | ACCO Metal Book Rings, 1.5 in. Diameter, 100/Box                               | 1        | FREE_GROUND_US   |
+<<<<<<< HEAD
       #| 1          | Sharpie Liquid Pen Style Highlighters, Fluorescent Yellow Ink, Chisel Tip, Dozen    | 1        | FREE_GROUND_US   |
+=======
+     # | 1          | ACCO Paper Clips, Jumbo, Nonskid, Silver, 100 Clips/Box, 10 Boxes/Pack                | 1        | FREE_GROUND_US   |
+>>>>>>> 889d7437c829f193627b39e0d8fd8328835b8d54
 
