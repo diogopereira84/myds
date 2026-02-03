@@ -7,6 +7,7 @@ import com.fedex.automation.service.fedex.*;
 import com.fedex.automation.service.mirakl.OfferService;
 import com.fedex.automation.utils.FedExEncryptionUtil;
 import com.fedex.automation.utils.TestDataFactory;
+import io.cucumber.datatable.DataTable;
 import io.cucumber.java.en.And;
 import io.cucumber.java.en.Given;
 import io.cucumber.java.en.Then;
@@ -16,6 +17,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -31,7 +34,7 @@ public class EssendantSteps {
     @Autowired private ObjectMapper objectMapper;
 
     // Shared State between steps
-    private String foundSku;
+    private String foundSku;       // Will hold the SKU of the LAST processed item
     private String foundOfferId;
     private CartContext cartData;
     private EstimateShipMethodResponse selectedMethod;
@@ -51,29 +54,58 @@ public class EssendantSteps {
         assertNotNull(sessionService.getFormKey(), "Form Key must be extracted");
     }
 
+    /**
+     * NEW STEP: Handles multiple products from a Cucumber DataTable.
+     * Iterates through the list and performs Search -> Offer -> Add for each.
+     */
+    @When("I add the following products to the cart:")
+    public void iAddTheFollowingProductsToTheCart(DataTable table) {
+        List<Map<String, String>> rows = table.asMaps(String.class, String.class);
+
+        for (Map<String, String> row : rows) {
+            String productName = row.get("productName");
+            String quantity = row.get("quantity");
+
+            log.info("--- Processing Item: {} (Qty: {}) ---", productName, quantity);
+
+            // 1. Search Logic
+            foundSku = catalogService.searchProductSku(productName);
+            assertNotNull(foundSku, "SKU should not be null for product: " + productName);
+
+            // 2. Offer Logic
+            foundOfferId = offerService.getOfferIdForProduct(foundSku);
+            assertNotNull(foundOfferId, "Offer ID should not be null for SKU: " + foundSku);
+
+            // 3. Add to Cart Logic
+            cartService.addToCart(foundSku, quantity, foundOfferId);
+        }
+
+        log.info("--- All items added to cart. Last SKU: {} ---", foundSku);
+    }
+
+    // --- Legacy Single-Step Definitions (Optional: Kept for backward compatibility) ---
     @When("I search for the product {string}")
     public void iSearchForTheProduct(String productName) {
-        log.info("--- [Step] Search Product: {} ---", productName);
         foundSku = catalogService.searchProductSku(productName);
         assertNotNull(foundSku, "SKU should not be null");
     }
 
     @And("I fetch the dynamic Offer ID from Mirakl")
     public void iFetchTheDynamicOfferIDFromMirakl() {
-        log.info("--- [Step] Get Offer ID ---");
         foundOfferId = offerService.getOfferIdForProduct(foundSku);
-        assertNotNull(foundOfferId, "Offer ID should not be null");
     }
 
     @And("I add {string} quantity of the product to the cart")
     public void iAddQuantityOfTheProductToTheCart(String qty) {
-        log.info("--- [Step] Add to Cart (Qty: {}) ---", qty);
         cartService.addToCart(foundSku, qty, foundOfferId);
     }
+    // ---------------------------------------------------------------------------------
 
     @And("I scrape the cart context data")
     public void iScrapeTheCartContextData() {
         log.info("--- [Step] Scrape Cart Context ---");
+        // Uses the 'foundSku' (last item added) to find the quote ID.
+        // This is safe because Quote ID is global to the cart.
         cartData = cartService.scrapeCartContext(foundSku);
         assertNotNull(cartData.getQuoteId(), "Quote ID should not be null");
         log.info("Cart Scraped. QuoteID: {}", cartData.getQuoteId());
@@ -92,7 +124,7 @@ public class EssendantSteps {
                 break;
             }
         }
-        // Fallback or fail
+        // Fallback to first available if preferred method not found
         if (selectedMethod == null && methods.length > 0) selectedMethod = methods[0];
 
         assertNotNull(selectedMethod, "Could not find shipping method: " + methodCode);
