@@ -2,100 +2,115 @@ package com.fedex.automation.service.fedex;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fedex.automation.config.AdobeConfig;
-import io.restassured.http.ContentType;
+import com.fedex.automation.model.graphql.GraphqlRequestBody;
+import com.fedex.automation.service.fedex.client.CatalogApiClient;
+import com.fedex.automation.service.fedex.strategy.ProductFilterStrategy;
 import io.restassured.response.Response;
-import io.restassured.specification.RequestSpecification; // Import for the injected spec
+import io.restassured.specification.RequestSpecification;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import static io.restassured.RestAssured.given;
+import java.util.Collections;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class CatalogService {
 
-    @Autowired
-    private AdobeConfig adobeConfig;
+    private final CatalogApiClient apiClient;
+    private final ObjectMapper objectMapper;
+    private final ProductFilterStrategy productFilter;
 
-    @Autowired
-    private ObjectMapper objectMapper;
-
-    // Use the centralized RequestSpecification if you have the RestConfig set up,
-    // otherwise strictly stick to the logic required for the fix.
-    // Based on previous context, I'll assume you might want to use the defaultRequestSpec
-    // if available, but to be safe and "only fix the parse issue",
-    // I will use a standard given() unless you specifically need the custom filter here.
-    // However, for consistency with your architecture:
     @Autowired(required = false)
     private RequestSpecification defaultRequestSpec;
+
+    // FIXED QUERY: 'facets' moved outside of 'items'
+    private static final String GRAPHQL_QUERY_TEMPLATE = """
+            query productSearch {
+                productSearch(
+                    filter: [
+                        { attribute: "shared_catalogs", in: ["3"] },
+                        { attribute: "is_pending_review", in: ["0", "2", "3"] }
+                    ],
+                    phrase: "%s",
+                    page_size: 10
+                ) {
+                    total_count
+                    items {
+                        product {
+                            id sku name __typename canonical_url
+                            small_image { url }
+                            image { url label }
+                            thumbnail { url label }
+                            price_range {
+                                minimum_price {
+                                    final_price { value currency }
+                                }
+                            }
+                        }
+                        productView {
+                            attributes { label name value }
+                        }
+                    }
+                    facets { 
+                        title 
+                    }
+                }
+            }
+            """;
 
     public String searchProductSku(String productName) {
         log.info("--- Searching Catalog for Product: '{}' ---", productName);
 
-        // FIX 1: Updated Query matches 'response111' structure (requesting product { sku })
-        // We also keep the 'filter' logic from your curl to ensure we get the correct B2B item.
-        String query = """
-            {
-              "query": "query productSearch { productSearch(phrase: \\"%s\\", filter: [ { attribute: \\"shared_catalogs\\", in: [\\"3\\"] }, { attribute: \\"is_pending_review\\", in: [\\"0\\",\\"2\\",\\"3\\"] } ], current_page: 1, page_size: 1) { items { product { sku name } } } }",
-              "variables": {}
-            }
-            """.formatted(productName);
+        // 1. Prepare the raw GraphQL string
+        String rawQuery = GRAPHQL_QUERY_TEMPLATE.formatted(productName);
 
-        RequestSpecification spec = (defaultRequestSpec != null) ? given().spec(defaultRequestSpec) : given();
+        // 2. Wrap it in the object. Jackson will handle the escaping and formatting.
+        GraphqlRequestBody requestBody = new GraphqlRequestBody(rawQuery, Collections.emptyMap());
 
-        Response response = spec
-                .contentType(ContentType.JSON)
-                .header("X-Api-Key", adobeConfig.getApiKey())
-                .header("Magento-Environment-Id", adobeConfig.getEnvironmentId())
-                .header("Magento-Website-Code", adobeConfig.getWebsiteCode())
-                .header("Magento-Store-Code", adobeConfig.getStoreCode())
-                .header("Magento-Store-View-Code", adobeConfig.getStoreViewCode())
-                .body(query)
-                .post(adobeConfig.getGraphqlEndpoint())
-                .then()
-                .statusCode(200)
-                .extract()
-                .response();
+        // 3. Send Request
+        Response response = apiClient.searchProducts(requestBody, defaultRequestSpec);
 
+        // 4. Validate & Extract (Logic remains the same)
+        return extractValidSku(response, productName);
+    }
+
+    private String extractValidSku(Response response, String productName) {
         try {
+            if (response.statusCode() != 200) {
+                // Log the body to see the exact error from Adobe
+                log.error("API Error Body: {}", response.asString());
+                throw new RuntimeException("Catalog API failed with status: " + response.statusCode());
+            }
+
             JsonNode root = objectMapper.readTree(response.asString());
 
             if (root.has("errors")) {
                 throw new RuntimeException("Adobe API Error: " + root.path("errors").toPrettyString());
             }
 
-            JsonNode items = root.path("data")
-                    .path("productSearch")
-                    .path("items");
+            JsonNode items = root.path("data").path("productSearch").path("items");
 
             if (items.isEmpty()) {
-                throw new RuntimeException("No products found for phrase: " + productName + ". Check Environment ID.");
+                throw new RuntimeException("No products found for phrase: " + productName);
             }
 
-            // FIX 2: Correct Parsing Path based on 'response111'
-            // Old: items.get(0).path("productView").path("sku") -> Wrong
-            // New: items.get(0).path("product").path("sku")     -> Correct
-            String sku = items.get(0).path("product").path("sku").asText();
-
-            // Fallback safety check (optional, but good for stability)
-            if (sku == null || sku.isEmpty()) {
-                log.warn("SKU not found in 'product' node, checking 'productView' as fallback...");
-                sku = items.get(0).path("productView").path("sku").asText();
+            for (JsonNode item : items) {
+                if (productFilter.isValid(item)) {
+                    String sku = item.path("product").path("sku").asText();
+                    String name = item.path("product").path("name").asText();
+                    log.info("Valid B2B Product Found: '{}' | SKU: {}", name, sku);
+                    return sku;
+                }
             }
 
-            if (sku == null || sku.isEmpty()) {
-                throw new RuntimeException("SKU not found in Catalog response. Response: " + items.toPrettyString());
-            }
-
-            log.info("Found SKU: {}", sku);
-            return sku;
+            throw new RuntimeException("Products found, but none matched the valid B2B criteria.");
 
         } catch (Exception e) {
-            throw new RuntimeException("Failed to parse Catalog response", e);
+            log.error("Error processing catalog response", e);
+            throw new RuntimeException("Failed to process Catalog response", e);
         }
     }
 }
