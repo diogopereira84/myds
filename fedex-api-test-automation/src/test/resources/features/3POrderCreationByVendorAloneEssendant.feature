@@ -46,3 +46,6 @@ Feature: Essendant Product Checkout Flow
     Then I submit the order using a secure credit card
     And the order should be placed successfully with a generated Order Number
     And I trigger the order export to Mirakl
+
+  Scenario: Registered user adds item to cart
+    Given I am logged in as a registered user with username "diogomp8484" and password "SenhaForte123"
