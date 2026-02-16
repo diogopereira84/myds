@@ -1,34 +1,42 @@
 package com.fedex.automation.config;
 
 import com.fedex.automation.utils.CurlLoggingFilter;
+import io.restassured.RestAssured;
 import io.restassured.builder.RequestSpecBuilder;
+import io.restassured.config.LogConfig;
+import io.restassured.config.RestAssuredConfig;
 import io.restassured.specification.RequestSpecification;
-import org.springframework.beans.factory.annotation.Value;
+import jakarta.annotation.PostConstruct;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 @Configuration
 public class RestConfig {
 
-    @Value("${logging.curl.enabled:false}")
-    private boolean logCurl;
+    @Autowired
+    private CurlLoggingFilter curlLoggingFilter;
 
-    /**
-     * Creates a pre-configured Request Specification.
-     * All global configurations (logging, timeouts, relaxed SSL) go here.
-     */
     @Bean
     public RequestSpecification defaultRequestSpec() {
         RequestSpecBuilder builder = new RequestSpecBuilder();
 
-        // 1. Global: Relaxed HTTPS (ignores SSL errors)
+        // 1. Relaxed SSL
         builder.setRelaxedHTTPSValidation();
 
-        // 2. Global: Apply cURL Filter if enabled in properties
-        if (logCurl) {
-            builder.addFilter(new CurlLoggingFilter());
-        }
+        // 2. Add our custom Logging Filter
+        builder.addFilter(curlLoggingFilter);
 
         return builder.build();
+    }
+
+    @PostConstruct
+    public void configureGlobalRestAssured() {
+        // Apply filter globally so it catches all requests, even those not using the bean directly
+        RestAssured.filters(curlLoggingFilter);
+
+        // Disable default RestAssured logging to prevent double-logging
+        RestAssured.config = RestAssuredConfig.config()
+                .logConfig(LogConfig.logConfig().enableLoggingOfRequestAndResponseIfValidationFails());
     }
 }

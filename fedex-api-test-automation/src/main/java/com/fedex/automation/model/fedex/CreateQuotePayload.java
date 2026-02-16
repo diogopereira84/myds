@@ -4,10 +4,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fedex.automation.model.fedex.EstimateShipMethodResponse.ExtensionAttributes;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import lombok.*;
 import lombok.experimental.SuperBuilder;
 
 import java.util.List;
@@ -87,6 +84,7 @@ public class CreateQuotePayload {
 
     // --- 2. Detail Address (Strictly Base fields ONLY) ---
     // Used in 'shipping_detail'. Guarantees no 'alt' or 'is_alternate' fields.
+    @EqualsAndHashCode(callSuper = false)
     @Data
     @SuperBuilder
     @NoArgsConstructor
@@ -95,6 +93,7 @@ public class CreateQuotePayload {
     }
 
     // --- 3. Full Address (Base + Alternate fields) ---
+    @EqualsAndHashCode(callSuper = false)
     @Data
     @SuperBuilder
     @NoArgsConstructor
@@ -118,6 +117,7 @@ public class CreateQuotePayload {
     }
 
     // --- 4. Main Shipping Address (Full Address) ---
+    @EqualsAndHashCode(callSuper = false)
     @Data
     @SuperBuilder
     @NoArgsConstructor
@@ -126,6 +126,7 @@ public class CreateQuotePayload {
     }
 
     // --- 5. Main Billing Address (Full Address + saveInAddressBook) ---
+    @EqualsAndHashCode(callSuper = false)
     @Data
     @SuperBuilder
     @NoArgsConstructor

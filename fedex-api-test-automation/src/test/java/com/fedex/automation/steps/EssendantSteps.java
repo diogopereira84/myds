@@ -23,7 +23,7 @@ public class EssendantSteps {
     @Autowired private CatalogService catalogService;
     @Autowired private CartService cartService;
     @Autowired private OfferService offerService;
-    @Autowired private TestContext testContext; // Ensure TestContext.java exists in src/main/java
+    @Autowired private TestContext testContext;
 
     @Given("I initialize the FedEx session")
     public void iInitializeTheFedExSession() {
@@ -34,7 +34,6 @@ public class EssendantSteps {
 
     @When("I search and add the following products to the cart:")
     public void iSearchAndAddTheFollowingProductsToTheCart(DataTable table) {
-        // Convert DataTable to a List of Maps
         List<Map<String, String>> rows = table.asMaps(String.class, String.class);
 
         for (Map<String, String> row : rows) {
@@ -47,13 +46,13 @@ public class EssendantSteps {
             String sku = catalogService.searchProductSku(productName);
             assertNotNull(sku, "SKU not found for: " + productName);
 
-            // 2. Offer Logic (Mirakl specific)
+            // 2. Offer Logic
             String offerId = offerService.getOfferIdForProduct(sku);
 
             // 3. Add to Cart Logic
             cartService.addToCart(sku, quantity, offerId);
 
-            // 4. Update Shared State (TestContext) so CommonCheckoutSteps can find the item
+            // 4. Update Shared State
             testContext.setCurrentSku(sku);
             testContext.setCurrentOfferId(offerId);
         }

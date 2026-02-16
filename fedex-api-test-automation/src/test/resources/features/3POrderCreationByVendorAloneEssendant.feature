@@ -13,7 +13,30 @@ Feature: Essendant Product Checkout Flow
     And I validate the pay rate API
     Then I submit the order using a secure credit card
     And the order should be placed successfully with a generated Order Number
-    And I trigger the order export to Mirakl
+    # New Assertions based on your request
+    And I verify the order contact details:
+      | firstName | Diogo                 |
+      | lastName  | Pereira               |
+      | email     | dpereira@mcfadyen.com |
+      | phone     | 4247021234            |
+
+    And I verify the transaction payment details:
+      | paymentType  | CREDIT_CARD      |
+      | currency     | USD              |
+      | amount       | 83.94            |
+      | authResponse | APPROVED         |
+      | maskedNumber | 411111xxxxxx1111 |
+
+    And I verify the product totals and taxation:
+      | taxableAmount | 75.79 |
+      | taxAmount     | 8.15  |
+      | totalAmount   | 83.94 |
+
+    And I verify the product line items:
+      | productName | ACCO Metal Book Rings |
+      | quantity    | 1                     |
+
+  #  And I trigger the order export to Mirakl
 
   # Variation 2: Multi-Item with Mixed Quantities
   Scenario: 3P Order Creation by Vendor Alone Essendant Multi-Item Order with Mixed Quantities

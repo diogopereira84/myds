@@ -3,6 +3,7 @@ package com.fedex.automation.utils;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fedex.automation.model.fedex.*;
+import com.fedex.automation.model.fedex.CreateQuotePayload.*;
 import com.fedex.automation.model.fedex.EstimateShippingRequest.CustomAttribute;
 
 import java.util.*;
@@ -60,7 +61,7 @@ public class TestDataFactory {
                 .street(Arrays.asList(STREET_LINE_1, STREET_LINE_2))
                 .company(COMPANY)
                 .isResidenceShipping(IS_RESIDENCE_SHIPPING)
-                .shipMethodData(selectedMethod) // Pass object directly, Service handles mapping
+                .shipMethodData(selectedMethod)
                 .thirdPartyCarrierCode(selectedMethod.getCarrierCode())
                 .thirdPartyMethodCode(selectedMethod.getMethodCode())
                 .firstPartyCarrierCode("")
@@ -69,59 +70,61 @@ public class TestDataFactory {
                 .build();
     }
 
-    public static Map<String, Object> buildQuotePayload(JsonNode rateResponse, EstimateShipMethodResponse selectedMethod) {
+    /**
+     * FIX: Returns strict CreateQuotePayload POJO instead of Map to prevent NoSuchMethodError.
+     */
+    public static CreateQuotePayload buildQuotePayload(JsonNode rateResponse, EstimateShipMethodResponse selectedMethod) {
         try {
+            // 1. Extract Rate Quote JSON string
             String rateQuoteString = mapper.writeValueAsString(rateResponse.get("rateQuote"));
 
-            Map<String, Object> shippingAddressMap = buildQuoteAddress(false);
-            Map<String, Object> billingAddressMap = buildQuoteAddress(true);
+            // 2. Build Typed Addresses
+            QuoteShippingAddress shippingAddress = buildQuoteShippingAddress();
+            QuoteBillingAddress billingAddress = buildQuoteBillingAddress();
 
-            // Convert the selected method object to a Map for the payload
-            Map<String, Object> shippingDetailMap = mapper.convertValue(selectedMethod, Map.class);
+            // 3. Build Shipping Detail from Selected Method
+            QuoteShippingDetail shippingDetail = QuoteShippingDetail.builder()
+                    .carrierCode(selectedMethod.getCarrierCode())
+                    .methodCode(selectedMethod.getMethodCode())
+                    .carrierTitle(selectedMethod.getCarrierTitle())
+                    .methodTitle(selectedMethod.getMethodTitle())
+                    .amount(selectedMethod.getAmount())
+                    .baseAmount(selectedMethod.getBaseAmount())
+                    .available(selectedMethod.getAvailable())
+                    .priceInclTax(selectedMethod.getPriceInclTax())
+                    .priceExclTax(selectedMethod.getPriceExclTax())
+                    .title(selectedMethod.getTitle())
+                    .itemId(selectedMethod.getItemId())
+                    .shippingTypeLabel(selectedMethod.getShippingTypeLabel())
+                    .address(buildQuoteDetailAddress()) // Strict detail address
+                    .build();
 
-            Map<String, Object> addressInformation = new LinkedHashMap<>();
-            addressInformation.put("shipping_address", shippingAddressMap);
-            addressInformation.put("billing_address", billingAddressMap);
-            addressInformation.put("shipping_method_code", selectedMethod.getMethodCode());
-            addressInformation.put("shipping_carrier_code", selectedMethod.getCarrierCode());
-            addressInformation.put("shipping_detail", shippingDetailMap);
+            // 4. Construct Address Information
+            AddressInformation addressInfo = AddressInformation.builder()
+                    .shippingAddress(shippingAddress)
+                    .billingAddress(billingAddress)
+                    .shippingMethodCode(selectedMethod.getMethodCode())
+                    .shippingCarrierCode(selectedMethod.getCarrierCode())
+                    .shippingDetail(shippingDetail)
+                    .build();
 
-            Map<String, Object> quotePayload = new LinkedHashMap<>();
-            quotePayload.put("addressInformation", addressInformation);
-            quotePayload.put("rateapi_response", rateQuoteString);
+            // 5. Return Final Payload Object
+            return CreateQuotePayload.builder()
+                    .addressInformation(addressInfo)
+                    .rateApiResponse(rateQuoteString)
+                    .build();
 
-            return quotePayload;
         } catch (Exception e) {
             throw new RuntimeException("Failed to build quote payload", e);
         }
     }
 
     public static SubmitOrderRequest createOrderRequest(String encryptedCardData) {
-        Map<String, Object> billingAddress = buildPaymentBillingAddress();
+        // Using Map here is fine for the JSON string generation required by SubmitOrderRequest
+        Map<String, Object> billingAddress = buildPaymentBillingAddressMap();
 
-        PaymentData paymentDataObj = PaymentData.builder()
-                .loginValidationKey("")
-                .paymentMethod(PAYMENT_METHOD)
-                .year(CARD_YEAR)
-                .expire(CARD_EXPIRE)
-                .nameOnCard(NAME_ON_CARD)
-                .number(MASKED_CARD_NUMBER)
-                .cvv(CVV)
-                .isBillingAddress(false)
-                .isFedexAccountApplied(false)
-                .fedexAccountNumber(null)
-                .creditCardType(CREDIT_CARD_TYPE_URL)
-                // Use a simplified map structure if the PaymentData model is complex to instantiate fully with nested types
-                // or ensure PaymentData model matches this structure exactly.
-                // For safety in this factory, we can use the ObjectMapper to convert our Map helper to the POJO if needed,
-                // or simply return the JSON string if the SubmitOrderRequest expects a string.
-                .build();
-
-        // Since SubmitOrderRequest expects paymentData as a JSON String:
         String paymentDataJson;
         try {
-            // We manually build the map to ensure it matches the exact structure expected by the server
-            // (The PaymentData POJO works too if it aligns perfectly)
             Map<String, Object> paymentMap = new LinkedHashMap<>();
             paymentMap.put("loginValidationKey", "");
             paymentMap.put("paymentMethod", PAYMENT_METHOD);
@@ -151,7 +154,7 @@ public class TestDataFactory {
                 .build();
     }
 
-    // --- Private Helper Methods ---
+    // --- Private Builders for POJOs ---
 
     private static Address buildAddress() {
         return Address.builder()
@@ -165,64 +168,78 @@ public class TestDataFactory {
                 .lastname(LAST_NAME)
                 .company(COMPANY)
                 .telephone(TELEPHONE)
-                .customAttributes(Arrays.asList(
-                        CustomAttribute.builder().attributeCode("email_id").value(EMAIL_ID).build(),
-                        CustomAttribute.builder().attributeCode("ext").value(TELEPHONE_EXT).build(),
-                        CustomAttribute.builder().attributeCode("residence_shipping").value(IS_RESIDENCE_SHIPPING).label(RESIDENCE_SHIPPING_LABEL).build()
-                ))
+                .customAttributes(buildCustomAttributes())
                 .build();
     }
 
-    private static Map<String, Object> buildQuoteAddress(boolean isBilling) {
+    private static List<CustomAttribute> buildCustomAttributes() {
+        return Arrays.asList(
+                CustomAttribute.builder().attributeCode("email_id").value(EMAIL_ID).build(),
+                CustomAttribute.builder().attributeCode("ext").value(TELEPHONE_EXT).build(),
+                CustomAttribute.builder().attributeCode("residence_shipping").value(IS_RESIDENCE_SHIPPING).label(RESIDENCE_SHIPPING_LABEL).build()
+        );
+    }
+
+    private static QuoteShippingAddress buildQuoteShippingAddress() {
+        return QuoteShippingAddress.builder()
+                .countryId(COUNTRY_ID).regionId(REGION_ID).regionCode(REGION_CODE).region(REGION_CODE)
+                .street(Arrays.asList(STREET_LINE_1, STREET_LINE_2))
+                .city(CITY).postcode(POSTCODE)
+                .firstname(FIRST_NAME).lastname(LAST_NAME)
+                .company(COMPANY).telephone(TELEPHONE)
+                .customAttributes(buildQuoteCustomAttributes())
+                .altFirstName("").altLastName("").altPhoneNumber("").altEmail("").altPhoneNumberext("")
+                .alternate(false)
+                .build();
+    }
+
+    private static QuoteBillingAddress buildQuoteBillingAddress() {
+        return QuoteBillingAddress.builder()
+                .countryId(COUNTRY_ID).regionId(REGION_ID).regionCode(REGION_CODE).region(REGION_CODE)
+                .street(Arrays.asList(STREET_LINE_1, STREET_LINE_2))
+                .city(CITY).postcode(POSTCODE)
+                .firstname(FIRST_NAME).lastname(LAST_NAME)
+                .company(COMPANY).telephone(TELEPHONE)
+                .customAttributes(buildQuoteCustomAttributes())
+                .altFirstName("").altLastName("").altPhoneNumber("").altEmail("").altPhoneNumberext("")
+                .alternate(false)
+                .saveInAddressBook(null)
+                .build();
+    }
+
+    private static QuoteDetailAddress buildQuoteDetailAddress() {
+        return QuoteDetailAddress.builder()
+                .countryId(COUNTRY_ID).regionId(REGION_ID).regionCode(REGION_CODE).region(REGION_CODE)
+                .street(Arrays.asList(STREET_LINE_1, STREET_LINE_2))
+                .city(CITY).postcode(POSTCODE)
+                .firstname(FIRST_NAME).lastname(LAST_NAME)
+                .company(COMPANY).telephone(TELEPHONE)
+                .customAttributes(buildQuoteCustomAttributes())
+                .build();
+    }
+
+    private static List<QuoteCustomAttribute> buildQuoteCustomAttributes() {
+        return Arrays.asList(
+                QuoteCustomAttribute.builder().attributeCode("email_id").value(EMAIL_ID).build(),
+                QuoteCustomAttribute.builder().attributeCode("ext").value(TELEPHONE_EXT).build(),
+                QuoteCustomAttribute.builder().attributeCode("residence_shipping").value(IS_RESIDENCE_SHIPPING).label(RESIDENCE_SHIPPING_LABEL).build()
+        );
+    }
+
+    private static Map<String, Object> buildPaymentBillingAddressMap() {
         Map<String, Object> addr = new LinkedHashMap<>();
         addr.put("countryId", COUNTRY_ID);
         addr.put("regionId", REGION_ID);
         addr.put("regionCode", REGION_CODE);
         addr.put("region", REGION_CODE);
         addr.put("street", Arrays.asList(STREET_LINE_1, STREET_LINE_2));
-        addr.put("company", COMPANY);
-        addr.put("telephone", TELEPHONE);
-        addr.put("postcode", POSTCODE);
         addr.put("city", CITY);
+        addr.put("postcode", POSTCODE);
         addr.put("firstname", FIRST_NAME);
         addr.put("lastname", LAST_NAME);
-
-        List<Map<String, Object>> customAttributes = new ArrayList<>();
-        customAttributes.add(attr("email_id", EMAIL_ID));
-        customAttributes.add(attr("ext", TELEPHONE_EXT));
-        customAttributes.add(attr("residence_shipping", IS_RESIDENCE_SHIPPING, RESIDENCE_SHIPPING_LABEL));
-        addr.put("customAttributes", customAttributes);
-
-        addr.put("altFirstName", "");
-        addr.put("altLastName", "");
-        addr.put("altPhoneNumber", "");
-        addr.put("altEmail", "");
-        addr.put("altPhoneNumberext", "");
-        addr.put("is_alternate", false);
-
-        if (isBilling) {
-            addr.put("saveInAddressBook", null);
-        }
-        return addr;
-    }
-
-    private static Map<String, Object> buildPaymentBillingAddress() {
-        Map<String, Object> addr = buildQuoteAddress(false);
+        addr.put("telephone", TELEPHONE);
         addr.put("address", STREET_LINE_1);
         addr.put("addressTwo", STREET_LINE_2);
         return addr;
-    }
-
-    private static Map<String, Object> attr(String code, Object value) {
-        Map<String, Object> m = new LinkedHashMap<>();
-        m.put("attribute_code", code);
-        m.put("value", value);
-        return m;
-    }
-
-    private static Map<String, Object> attr(String code, Object value, String label) {
-        Map<String, Object> m = attr(code, value);
-        m.put("label", label);
-        return m;
     }
 }

@@ -42,8 +42,8 @@ public class CatalogService {
      * Searches for a 1P product using Adobe I/O GraphQL and finds the EXACT name match.
      * Criteria: Name must strictly match the keyword (ignoring case) to avoid picking test/partial matches.
      */
-    public String search1PProduct(String keyword) {
-        log.info("Searching for 1P Product with keyword: {}", keyword);
+    public String search1PProduct(String productName) {
+        log.info("--- Searching Catalog for Product: '{}' ---", productName);
 
         String query = "query productSearch {" +
                 "  productSearch(" +
@@ -51,7 +51,7 @@ public class CatalogService {
                 "      { attribute: \"shared_catalogs\", in: [\"3\"] }," +
                 "      { attribute: \"is_pending_review\", in: [\"0\",\"2\",\"3\"] }" +
                 "    ]," +
-                "    phrase: \"" + keyword + "\"," +
+                "    phrase: \"" + productName + "\"," +
                 "    page_size: 10" +
                 "  ) {" +
                 "    items {" +
@@ -86,7 +86,7 @@ public class CatalogService {
         List<Map<String, Object>> items = jsonPath.getList("data.productSearch.items");
 
         if (items == null || items.isEmpty()) {
-            fail("No 1P products found for keyword: " + keyword);
+            fail("No 1P products found for keyword: " + productName);
         }
 
         // FILTER LOGIC: Find the item where name matches 'keyword' exactly
@@ -98,18 +98,18 @@ public class CatalogService {
 
             log.debug("Checking item: Name='{}', SKU='{}'", name, sku);
 
-            if (name != null && name.equalsIgnoreCase(keyword)) {
+            if (name != null && name.equalsIgnoreCase(productName)) {
                 foundSku = sku;
                 break;
             }
         }
 
         if (foundSku == null) {
-            log.warn("No exact name match found for '{}'. Defaulting to first item as fallback.", keyword);
+            log.warn("No exact name match found for '{}'. Defaulting to first item as fallback.", productName);
             foundSku = (String) ((Map<String, Object>) items.get(0).get("product")).get("sku");
         }
 
-        log.info("Resolved 1P SKU: {}", foundSku);
+        log.info("Product Found: Name='{}', SKU='{}'", productName, foundSku);
         assertNotNull(foundSku, "Could not resolve SKU for 1P product");
 
         return foundSku;
@@ -162,8 +162,10 @@ public class CatalogService {
         // 3. Send Request
         Response response = apiClient.searchProducts(requestBody, defaultRequestSpec);
 
+        String sku = extractValidSku(response, productName);
+        log.info("Product Found: Name='{}', SKU='{}'", productName, sku);
         // 4. Validate & Extract (Logic remains the same)
-        return extractValidSku(response, productName);
+        return sku;
     }
 
     private String extractValidSku(Response response, String productName) {

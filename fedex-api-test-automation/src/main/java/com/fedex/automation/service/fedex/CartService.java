@@ -41,59 +41,30 @@ public class CartService {
 
         String endpoint = "/default/rest/default/V1/guest-carts/" + maskedCartId + "/totals-information";
 
-        // 2. Execute Request (Matches your CURL)
+        // 2. Execute Request
         Response response = sessionService.authenticatedRequest()
                 .contentType(ContentType.JSON)
                 .header("accept", "*/*")
                 .header("accept-language", "en-US,en;q=0.9")
                 .header("adrum", "isAjax:true")
-                .header("x-requested-with", "XMLHttpRequest") // Standard for this call
+                .header("x-requested-with", "XMLHttpRequest")
                 .body("{\"addressInformation\":{\"address\":{}}}")
                 .post(endpoint);
 
-        // 3. Log Response as requested
+        // 3. Log Response
         log.info("Cart Totals Response Code: {}", response.statusCode());
-        log.info("Cart Totals Response Body: {}", response.body().asPrettyString());
+        if (log.isDebugEnabled()) {
+            log.debug("Cart Totals Response Body: {}", response.body().asPrettyString());
+        }
 
         assertEquals(200, response.statusCode(), "Expected 200 OK from Cart Totals Information");
     }
 
     /**
-     * Helper to get the Masked Cart ID.
-     * If we haven't scraped it yet, we quickly fetch the cart page to find it.
+     * Adds an item to the cart using the form POST endpoint.
      */
-    private String getOrFetchMaskedCartId() {
-        if (cachedMaskedCartId != null) {
-            return cachedMaskedCartId;
-        }
-
-        log.info("Masked Cart ID not found in context. Fetching from Cart Page...");
-        Response response = sessionService.authenticatedRequest()
-                .get("/default/checkout/cart/");
-
-        String html = response.body().asString();
-
-        // Regex to find "maskedQuoteId": "..." in the checkoutConfig JSON on the page
-        // Standard Magento 2 pattern
-        Pattern pattern = Pattern.compile("\"maskedQuoteId\":\"([^\"]+)\"");
-        Matcher matcher = pattern.matcher(html);
-
-        if (matcher.find()) {
-            cachedMaskedCartId = matcher.group(1);
-            log.info("Extracted Masked Cart ID: {}", cachedMaskedCartId);
-            return cachedMaskedCartId;
-        } else {
-            throw new RuntimeException("Failed to extract Masked Cart ID from /checkout/cart/ page. verify the session is active.");
-        }
-    }
-
-
-
     public void addToCart(String sku, String qty, String offerId) {
-
-        log.info("Adding SKU {} to cart...", sku);
-
-
+        log.info("Adding to Cart: SKU={}, Qty={}, OfferID={}", sku, qty, offerId);
 
         // 2. Prepare Form Data
         Map<String, String> params = new HashMap<>();
@@ -104,17 +75,26 @@ public class CartService {
         params.put("punchout_disabled", "1");
         params.put("super_attribute", "");
 
-        // 3. Send Request
+        // 2. Send Request
         Response response = sessionService.authenticatedRequest()
                 .contentType(ContentType.URLENC)
                 .header("X-Requested-With", "XMLHttpRequest")
                 .formParams(params)
                 .post(addEndpoint);
 
+        // 3. Validate
+        if (response.statusCode() != 302) {
+            log.error("Add to Cart failed. Status: {}, Body: {}", response.statusCode(), response.body().asString());
+        }
         assertEquals(302, response.statusCode(), "Add to cart should redirect (302)");
+        log.info("Item successfully added to cart (302 Redirect received).");
     }
 
+    /**
+     * Scrapes the Cart page to build the CartContext (Quote IDs, Item ID).
+     */
     public CartContext scrapeCartContext(String targetSku) {
+        log.info("Scraping Cart Context, looking for SKU: {}", targetSku);
 
         Response response = sessionService.authenticatedRequest().get("/default/checkout/cart/");
         String html = response.asString();
@@ -146,8 +126,11 @@ public class CartService {
             }
 
             if (itemId == null) {
-                fail("Item " + targetSku + " not found in the cart JSON.");
+                fail("Item SKU " + targetSku + " not found in the cart JSON.");
             }
+
+            log.info("Cart Context Captured: QuoteID={}, MaskedID={}, ItemID={}, Qty={}",
+                    realQuoteId, maskedQuoteId, itemId, qty);
 
             return CartContext.builder()
                     .formKey(sessionService.getFormKey())
@@ -158,8 +141,43 @@ public class CartService {
                     .build();
 
         } catch (Exception e) {
+            log.error("Failed to parse cart JSON config", e);
             throw new RuntimeException("Failed to scrape cart", e);
         }
+    }
+
+    /**
+     * Helper to get the Masked Cart ID.
+     * Uses cache if available, otherwise fetches cart page.
+     */
+    private String getOrFetchMaskedCartId() {
+        if (cachedMaskedCartId != null) {
+            return cachedMaskedCartId;
+        }
+
+        log.info("Masked Cart ID not found in context. Fetching from Cart Page...");
+        Response response = sessionService.authenticatedRequest()
+                .get("/default/checkout/cart/");
+
+        String html = response.body().asString();
+        String extractedId = extractMaskedIdRegex(html);
+
+        if (extractedId != null) {
+            this.cachedMaskedCartId = extractedId;
+            log.info("Extracted Masked Cart ID: {}", cachedMaskedCartId);
+            return cachedMaskedCartId;
+        } else {
+            throw new RuntimeException("Failed to extract Masked Cart ID from /checkout/cart/ page. Verify the session is active.");
+        }
+    }
+
+    private String extractMaskedIdRegex(String html) {
+        Pattern pattern = Pattern.compile("\"maskedQuoteId\":\"([^\"]+)\"");
+        Matcher matcher = pattern.matcher(html);
+        if (matcher.find()) {
+            return matcher.group(1);
+        }
+        return null;
     }
 
     private String extractJsonConfig(String html) {

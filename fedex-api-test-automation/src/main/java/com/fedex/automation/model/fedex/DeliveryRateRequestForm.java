@@ -1,7 +1,9 @@
 package com.fedex.automation.model.fedex;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -32,9 +34,6 @@ public class DeliveryRateRequestForm {
 
     private String city;
 
-    /**
-     * In the real form, this becomes street[]=A & street[]=
-     */
     @Builder.Default
     private List<String> street = new ArrayList<>();
 
@@ -43,11 +42,15 @@ public class DeliveryRateRequestForm {
     @JsonProperty("is_residence_shipping")
     private Boolean isResidenceShipping;
 
+    // --- FIX START: Added missing field ---
+    @JsonProperty("location_id")
+    private String locationId;
+    // --- FIX END ---
+
     /**
-     * This field in the form is a JSON string.
-     * We keep it as an object and serialize it in the client.
+     * Object field for internal use (ignored in JSON serialization).
      */
-    @JsonProperty("ship_method_data")
+    @JsonIgnore
     private EstimateShipMethodResponse shipMethodData;
 
     @JsonProperty("third_party_carrier_code")
@@ -62,6 +65,18 @@ public class DeliveryRateRequestForm {
     @JsonProperty("first_party_method_code")
     private String firstPartyMethodCode;
 
-    @JsonProperty("location_id")
-    private String locationId;
+    /**
+     * Custom serialized getter for the API.
+     */
+    @JsonProperty("ship_method_data")
+    public String getShipMethodDataJson() {
+        if (shipMethodData == null) {
+            return null;
+        }
+        try {
+            return new ObjectMapper().writeValueAsString(shipMethodData);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to serialize shipMethodData", e);
+        }
+    }
 }

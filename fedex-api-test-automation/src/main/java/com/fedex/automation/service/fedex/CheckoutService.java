@@ -2,10 +2,7 @@ package com.fedex.automation.service.fedex;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fedex.automation.model.fedex.DeliveryRateRequestForm;
-import com.fedex.automation.model.fedex.EstimateShipMethodResponse;
-import com.fedex.automation.model.fedex.EstimateShippingRequest;
-import com.fedex.automation.model.fedex.SubmitOrderRequest;
+import com.fedex.automation.model.fedex.*;
 import io.restassured.http.ContentType;
 import io.restassured.response.Response;
 import lombok.RequiredArgsConstructor;
@@ -13,8 +10,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import java.util.Map;
+import java.util.Objects;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.fail;
 
 @Slf4j
@@ -44,6 +42,9 @@ public class CheckoutService {
     private String submitOrderEndpoint;
 
     public EstimateShipMethodResponse[] estimateShipping(String maskedQuoteId, EstimateShippingRequest request) {
+        Objects.requireNonNull(maskedQuoteId, "Masked Quote ID cannot be null. Check 'Scrape Cart' step.");
+        log.info("Estimating Shipping Methods for Quote: {}", maskedQuoteId);
+
         String url = estimateEndpoint.replace("{cartId}", maskedQuoteId);
         return sessionService.authenticatedRequest()
                 .contentType(ContentType.JSON)
@@ -57,6 +58,12 @@ public class CheckoutService {
     }
 
     public JsonNode getDeliveryRate(DeliveryRateRequestForm form) {
+        // FIX: safely access carrier code from nested object for logging
+        String carrier = (form.getShipMethodData() != null) ? form.getShipMethodData().getCarrierCode() : "Unknown";
+        String method = (form.getShipMethodData() != null) ? form.getShipMethodData().getMethodCode() : "Unknown";
+
+        log.info("Retrieving Delivery Rate for Carrier: {}, Method: {}", carrier, method);
+
         Response response = sessionService.authenticatedRequest()
                 .contentType("application/x-www-form-urlencoded; charset=UTF-8")
                 .header("X-Requested-With", "XMLHttpRequest")
@@ -69,7 +76,6 @@ public class CheckoutService {
                 .formParam("zipcode", form.getZipcode())
                 .formParam("region_id", form.getRegionId())
                 .formParam("city", form.getCity())
-                // Handle the list explicitly to match 'street[]' & 'street[]' format
                 .formParam("street[]", form.getStreet().get(0))
                 .formParam("street[]", form.getStreet().size() > 1 ? form.getStreet().get(1) : "")
                 .formParam("company", form.getCompany())
@@ -89,7 +95,9 @@ public class CheckoutService {
         }
     }
 
-    public void createQuote(Map<String, Object> quotePayload) {
+    // FIX: Method signature now accepts CreateQuotePayload object
+    public void createQuote(CreateQuotePayload quotePayload) {
+        log.info("Creating Pricing Quote...");
         try {
             Response response = sessionService.authenticatedRequest()
                     .contentType("application/x-www-form-urlencoded; charset=UTF-8")
@@ -121,11 +129,12 @@ public class CheckoutService {
     }
 
     public String submitOrder(SubmitOrderRequest request, String quoteId) {
+        log.info("Submitting Order for QuoteID: {}", quoteId);
         try {
             String jsonData = objectMapper.writeValueAsString(request);
 
             Response response = sessionService.authenticatedRequest()
-                    .cookie("quoteId", quoteId) // Explicitly set QuoteID cookie
+                    .cookie("quoteId", quoteId)
                     .contentType("application/x-www-form-urlencoded; charset=UTF-8")
                     .header("X-Requested-With", "XMLHttpRequest")
                     .header("Referer", baseUrl + "/default/checkout")
