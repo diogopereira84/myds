@@ -12,6 +12,8 @@ import org.springframework.stereotype.Service;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.fail;
@@ -23,9 +25,69 @@ public class CartService {
 
     private final SessionService sessionService;
     private final ObjectMapper objectMapper;
+    private String cachedMaskedCartId; // Stores the ID to avoid re-scraping
 
     @Value("${endpoint.cart.add}")
     private String addEndpoint;
+
+    /**
+     * Automates the 'totals-information' CURL.
+     * Uses the Masked Cart ID (e.g., otOrjqodDVcQ88dhpDjbfYVyMTqk5G86).
+     */
+    public void checkCartTotalsInformation() {
+        // 1. Ensure we have the Masked Cart ID
+        String maskedCartId = getOrFetchMaskedCartId();
+        log.info("Checking Cart Totals for Masked ID: {}", maskedCartId);
+
+        String endpoint = "/default/rest/default/V1/guest-carts/" + maskedCartId + "/totals-information";
+
+        // 2. Execute Request (Matches your CURL)
+        Response response = sessionService.authenticatedRequest()
+                .contentType(ContentType.JSON)
+                .header("accept", "*/*")
+                .header("accept-language", "en-US,en;q=0.9")
+                .header("adrum", "isAjax:true")
+                .header("x-requested-with", "XMLHttpRequest") // Standard for this call
+                .body("{\"addressInformation\":{\"address\":{}}}")
+                .post(endpoint);
+
+        // 3. Log Response as requested
+        log.info("Cart Totals Response Code: {}", response.statusCode());
+        log.info("Cart Totals Response Body: {}", response.body().asPrettyString());
+
+        assertEquals(200, response.statusCode(), "Expected 200 OK from Cart Totals Information");
+    }
+
+    /**
+     * Helper to get the Masked Cart ID.
+     * If we haven't scraped it yet, we quickly fetch the cart page to find it.
+     */
+    private String getOrFetchMaskedCartId() {
+        if (cachedMaskedCartId != null) {
+            return cachedMaskedCartId;
+        }
+
+        log.info("Masked Cart ID not found in context. Fetching from Cart Page...");
+        Response response = sessionService.authenticatedRequest()
+                .get("/default/checkout/cart/");
+
+        String html = response.body().asString();
+
+        // Regex to find "maskedQuoteId": "..." in the checkoutConfig JSON on the page
+        // Standard Magento 2 pattern
+        Pattern pattern = Pattern.compile("\"maskedQuoteId\":\"([^\"]+)\"");
+        Matcher matcher = pattern.matcher(html);
+
+        if (matcher.find()) {
+            cachedMaskedCartId = matcher.group(1);
+            log.info("Extracted Masked Cart ID: {}", cachedMaskedCartId);
+            return cachedMaskedCartId;
+        } else {
+            throw new RuntimeException("Failed to extract Masked Cart ID from /checkout/cart/ page. verify the session is active.");
+        }
+    }
+
+
 
     public void addToCart(String sku, String qty, String offerId) {
 

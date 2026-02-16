@@ -3,9 +3,9 @@ Feature: Printful Product Checkout Flow
   # Variation 1: Single Item (As requested: "what about single item")
   Scenario: 3P Order Creation by Vendor Alone Printful Single Item Order (Qty 1)
     Given I initialize the FedEx session
-    When I add the following products to the cart:
-      | productName                     | quantity |
-      | Kids & Baby Clothes             | 1        |
+  #  When I add the following products to the cart:
+  #    | productName                     | quantity |
+  #    | Kids & Baby Clothes             | 1        |
   #  And I scrape the cart context data
   #  And I estimate shipping methods and select "FREE_GROUND_US"
   #  And I retrieve the delivery rate

@@ -2,9 +2,11 @@ package com.fedex.automation.glue;
 
 import io.cucumber.spring.CucumberContextConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
+import com.fedex.automation.AutomationFrameworkApplication; // Ensure this imports your main app class
 
 @CucumberContextConfiguration
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
+@SpringBootTest(classes = AutomationFrameworkApplication.class)
 public class CucumberSpringConfiguration {
-    // This class is empty; it just configures the Spring Context for Cucumber
+    // This class must be empty.
+    // It exists solely to glue Cucumber and Spring Boot together.
 }
