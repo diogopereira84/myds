@@ -7,35 +7,30 @@ import io.restassured.config.LogConfig;
 import io.restassured.config.RestAssuredConfig;
 import io.restassured.specification.RequestSpecification;
 import jakarta.annotation.PostConstruct;
-import org.springframework.beans.factory.annotation.Autowired;
+import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 @Configuration
+@RequiredArgsConstructor
 public class RestConfig {
 
-    @Autowired
-    private CurlLoggingFilter curlLoggingFilter;
+    private final CurlLoggingFilter curlLoggingFilter;
 
     @Bean
     public RequestSpecification defaultRequestSpec() {
-        RequestSpecBuilder builder = new RequestSpecBuilder();
-
-        // 1. Relaxed SSL
-        builder.setRelaxedHTTPSValidation();
-
-        // 2. Add our custom Logging Filter
-        builder.addFilter(curlLoggingFilter);
-
-        return builder.build();
+        return new RequestSpecBuilder()
+                .setRelaxedHTTPSValidation()
+                .addFilter(curlLoggingFilter) // Apply our smart filter bean
+                .build();
     }
 
     @PostConstruct
     public void configureGlobalRestAssured() {
-        // Apply filter globally so it catches all requests, even those not using the bean directly
+        // Apply filter globally as a safety net for any 'given()' calls created without the bean
         RestAssured.filters(curlLoggingFilter);
 
-        // Disable default RestAssured logging to prevent double-logging
+        // Disable default RestAssured logging to prevent double-logging (we handle it in the filter)
         RestAssured.config = RestAssuredConfig.config()
                 .logConfig(LogConfig.logConfig().enableLoggingOfRequestAndResponseIfValidationFails());
     }

@@ -31,17 +31,25 @@ public class CartService {
     private String addEndpoint;
 
     /**
+     * Overload for Step Definitions (No arguments required).
+     * Automatically resolves the Masked Cart ID.
+     */
+    public void checkCartTotalsInformation() {
+        String maskedCartId = getOrFetchMaskedCartId();
+        checkCartTotalsInformation(maskedCartId);
+    }
+
+    /**
      * Automates the 'totals-information' CURL.
      * Uses the Masked Cart ID (e.g., otOrjqodDVcQ88dhpDjbfYVyMTqk5G86).
      */
-    public void checkCartTotalsInformation() {
-        // 1. Ensure we have the Masked Cart ID
-        String maskedCartId = getOrFetchMaskedCartId();
+    public void checkCartTotalsInformation(String maskedCartId) {
         log.info("Checking Cart Totals for Masked ID: {}", maskedCartId);
 
         String endpoint = "/default/rest/default/V1/guest-carts/" + maskedCartId + "/totals-information";
 
-        // 2. Execute Request
+        // This request uses sessionService.authenticatedRequest(),
+        // which includes the CurlLoggingFilter, so CURL logs WILL appear here.
         Response response = sessionService.authenticatedRequest()
                 .contentType(ContentType.JSON)
                 .header("accept", "*/*")
@@ -51,7 +59,6 @@ public class CartService {
                 .body("{\"addressInformation\":{\"address\":{}}}")
                 .post(endpoint);
 
-        // 3. Log Response
         log.info("Cart Totals Response Code: {}", response.statusCode());
         if (log.isDebugEnabled()) {
             log.debug("Cart Totals Response Body: {}", response.body().asPrettyString());
@@ -66,23 +73,20 @@ public class CartService {
     public void addToCart(String sku, String qty, String offerId) {
         log.info("Adding to Cart: SKU={}, Qty={}, OfferID={}", sku, qty, offerId);
 
-        // 2. Prepare Form Data
         Map<String, String> params = new HashMap<>();
         params.put("form_key", sessionService.getFormKey());
         params.put("sku", sku);
         params.put("qty", qty);
-        params.put("offer_id", offerId); // Use dynamic ID
+        params.put("offer_id", offerId);
         params.put("punchout_disabled", "1");
         params.put("super_attribute", "");
 
-        // 2. Send Request
         Response response = sessionService.authenticatedRequest()
                 .contentType(ContentType.URLENC)
                 .header("X-Requested-With", "XMLHttpRequest")
                 .formParams(params)
                 .post(addEndpoint);
 
-        // 3. Validate
         if (response.statusCode() != 302) {
             log.error("Add to Cart failed. Status: {}, Body: {}", response.statusCode(), response.body().asString());
         }

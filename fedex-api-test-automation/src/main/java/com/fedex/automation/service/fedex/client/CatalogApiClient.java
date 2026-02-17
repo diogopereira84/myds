@@ -15,18 +15,23 @@ public class CatalogApiClient {
 
     private final AdobeConfig adobeConfig;
 
-    // CHANGED: Accepts 'Object requestBody' instead of 'String query'
+    /**
+     * Executes the search against Adobe GraphQL.
+     * @param requestBody The GraphQL wrapper object
+     * @param spec The RequestSpecification (must include logging filter)
+     */
     public Response searchProducts(Object requestBody, RequestSpecification spec) {
-        RequestSpecification finalSpec = (spec != null) ? given().spec(spec) : given();
+        // Enforce usage of the injected spec
+        RequestSpecification request = (spec != null) ? given().spec(spec) : given();
 
-        return finalSpec
+        return request
                 .contentType(ContentType.JSON)
                 .header("X-Api-Key", adobeConfig.getApiKey())
                 .header("Magento-Environment-Id", adobeConfig.getEnvironmentId())
                 .header("Magento-Website-Code", adobeConfig.getWebsiteCode())
                 .header("Magento-Store-Code", adobeConfig.getStoreCode())
                 .header("Magento-Store-View-Code", adobeConfig.getStoreViewCode())
-                .body(requestBody) // RestAssured + Jackson will make this valid JSON
+                .body(requestBody)
                 .post(adobeConfig.getGraphqlEndpoint());
     }
 }
