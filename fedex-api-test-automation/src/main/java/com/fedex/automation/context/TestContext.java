@@ -14,8 +14,6 @@ public class TestContext {
 
     private String currentSku;
     private String currentOfferId;
-
-    // NEW: Tracks if we are in a 1P or 3P flow
     private String sellerModel;
 
     private CartContext cartData;
@@ -24,4 +22,11 @@ public class TestContext {
     private String placedOrderNumber;
     private JsonNode checkoutDetails;
     private JsonNode unifiedDataLayer;
+
+    // --- NEW: Document 1P Flow Tracking ---
+    private String sessionId;
+    private String originalDocId;
+    private String printReadyDocId;
+    private String configuratorStateId;
+    private String configuratorPayload; // Stores the full JSON needed for Add to Cart
 }

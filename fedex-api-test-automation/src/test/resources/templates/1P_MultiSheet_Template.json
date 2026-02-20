@@ -1,0 +1,45 @@
+{
+  "configuratorStateParameters": {
+    "product": {
+      "productionContentAssociations": [],
+      "userProductName": "SimpleTextPdf",
+      "contextKeys": [],
+      "id": "1456773326927",
+      "version": 2,
+      "name": "Multi Sheet",
+      "qty": 1,
+      "priceable": true,
+      "proofRequired": false,
+      "isOutSourced": false,
+      "minDPI": "150.0",
+      "features": [
+        { "id": "1448981554101", "name": "Prints Per Page", "choice": { "id": "1448990257151", "name": "One", "properties": [] } },
+        { "id": "1448981549109", "name": "Paper Size", "choice": { "id": "1448986650332", "name": "8.5x11", "properties": [] } },
+        { "id": "1448981549269", "name": "Sides", "choice": { "id": "1448988124560", "name": "Single-Sided", "properties": [] } },
+        { "id": "1448981549581", "name": "Print Color", "choice": { "id": "1448988600611", "name": "Full Color", "properties": [] } },
+        { "id": "1448981549741", "name": "Paper Type", "choice": { "id": "1448988664295", "name": "Laser (32 lb.)", "properties": [] } }
+      ],
+      "contentAssociations": [
+        {
+          "parentContentReference": "REPLACE_ORIGINAL_DOC_ID",
+          "contentReference": "REPLACE_PRINT_READY_DOC_ID",
+          "contentType": "application/pdf",
+          "fileName": "SimpleTextPdf.pdf",
+          "name": "Multi Sheet",
+          "purpose": "MAIN_CONTENT",
+          "printReady": true
+        }
+      ]
+    },
+    "userWorkspace": {
+      "files": [
+        {
+          "name": "SimpleTextPdf.pdf",
+          "id": "REPLACE_ORIGINAL_DOC_ID"
+        }
+      ],
+      "projects": []
+    },
+    "configuratorSessionId": "REPLACE_SESSION_ID"
+  }
+}
