@@ -2,6 +2,7 @@ package com.fedex.automation.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fedex.automation.model.fedex.EstimateShippingRequest;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;

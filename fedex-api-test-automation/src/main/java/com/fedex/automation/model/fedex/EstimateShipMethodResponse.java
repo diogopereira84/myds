@@ -1,5 +1,6 @@
 package com.fedex.automation.model.fedex;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
@@ -15,6 +16,7 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 @JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonIgnoreProperties(ignoreUnknown = true) // <--- CRITICAL FIX: Ignores unexpected fields
 public class EstimateShipMethodResponse {
 
     @JsonProperty("carrier_code")
@@ -41,6 +43,10 @@ public class EstimateShipMethodResponse {
 
     @JsonProperty("price_excl_tax")
     private BigDecimal priceExclTax;
+
+    // --- Added missing field causing the crash ---
+    @JsonProperty("error_message")
+    private String errorMessage;
 
     @JsonProperty("offer_id")
     private String offerId;
@@ -88,6 +94,7 @@ public class EstimateShipMethodResponse {
     @NoArgsConstructor
     @AllArgsConstructor
     @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonIgnoreProperties(ignoreUnknown = true) // Added here too for safety
     public static class ExtensionAttributes {
         private Boolean fastest;
         private Boolean cheapest;
@@ -98,6 +105,7 @@ public class EstimateShipMethodResponse {
     @NoArgsConstructor
     @AllArgsConstructor
     @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class Address {
 
         @JsonProperty("countryId")
@@ -132,14 +140,12 @@ public class EstimateShipMethodResponse {
     @NoArgsConstructor
     @AllArgsConstructor
     @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class CustomAttribute {
 
         @JsonProperty("attribute_code")
         private String attributeCode;
 
-        /**
-         * Can be String/Boolean/etc
-         */
         private Object value;
 
         private String label;

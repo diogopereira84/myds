@@ -14,14 +14,14 @@ public class TestContext {
 
     private String currentSku;
     private String currentOfferId;
+
+    // NEW: Tracks if we are in a 1P or 3P flow
+    private String sellerModel;
+
     private CartContext cartData;
     private EstimateShipMethodResponse selectedShippingMethod;
     private JsonNode rateResponse;
     private String placedOrderNumber;
-
-    /**
-     * Stores the full 'output.checkout' JSON node from the submit order response.
-     * This acts as the Source of Truth for BDD verification steps.
-     */
     private JsonNode checkoutDetails;
+    private JsonNode unifiedDataLayer;
 }

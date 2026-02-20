@@ -2,7 +2,6 @@ package com.fedex.automation.utils;
 
 import io.restassured.filter.Filter;
 import io.restassured.filter.FilterContext;
-import io.restassured.http.Cookie;
 import io.restassured.http.Header;
 import io.restassured.response.Response;
 import io.restassured.specification.FilterableRequestSpecification;
@@ -11,6 +10,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -25,25 +26,18 @@ public class CurlLoggingFilter implements Filter {
                            FilterableResponseSpecification responseSpec,
                            FilterContext ctx) {
 
-        // --- 1. Request Logging ---
         if (curlEnabled) {
             logCurl(requestSpec);
         } else {
-            log.info("Request: {} {}", requestSpec.getMethod(), requestSpec.getURI());
+            log.info("Request: {} {}", requestSpec.getMethod(), buildFullUrl(requestSpec));
         }
 
-        // --- 2. Execution ---
         Response response = ctx.next(requestSpec, responseSpec);
 
-        // --- 3. Response Logging (DEBUG Level) ---
         if (log.isDebugEnabled()) {
             log.debug("Response Status: {} {}", response.getStatusCode(), response.getStatusLine());
-
-            String contentType = response.getContentType();
-            if (contentType != null && (contentType.contains("json") || contentType.contains("xml") || contentType.contains("text"))) {
+            if (isPrintable(response.getContentType())) {
                 log.debug("Response Body:\n{}", response.getBody().asPrettyString());
-            } else {
-                log.debug("Response Body: [Content-Type: {} - Binary or Non-printable]", contentType);
             }
         }
 
@@ -53,14 +47,16 @@ public class CurlLoggingFilter implements Filter {
     private void logCurl(FilterableRequestSpecification requestSpec) {
         StringBuilder curl = new StringBuilder("\n--------------------------------------------------------------------------------\n");
         curl.append("curl --location --request ").append(requestSpec.getMethod());
-        curl.append(" '").append(requestSpec.getURI()).append("'");
+
+        String fullUrl = buildFullUrl(requestSpec);
+        curl.append(" '").append(fullUrl).append("'");
 
         // Headers
         for (Header header : requestSpec.getHeaders()) {
             curl.append(" \\\n--header '").append(header.getName()).append(": ").append(header.getValue()).append("'");
         }
 
-        // Cookies - FIXED: Cookies object doesn't have isEmpty(), used size() > 0
+        // Cookies
         if (requestSpec.getCookies().size() > 0) {
             String cookieString = requestSpec.getCookies().asList().stream()
                     .map(c -> c.getName() + "=" + c.getValue())
@@ -68,15 +64,63 @@ public class CurlLoggingFilter implements Filter {
             curl.append(" \\\n--header 'Cookie: ").append(cookieString).append("'");
         }
 
-        // Body
+        // Body or Form Params
+        // 1. Check Body (JSON/Raw)
         if (requestSpec.getBody() != null) {
-            String body = requestSpec.getBody().toString();
-            // Escape single quotes for shell safety
-            body = body.replace("'", "'\\''");
+            String body = requestSpec.getBody().toString().replace("'", "'\\''");
             curl.append(" \\\n--data-raw '").append(body).append("'");
+        }
+        // 2. Check Form Params (x-www-form-urlencoded) - FIX: Handle ArrayList values & incorrect Generic Type
+        else if (!requestSpec.getFormParams().isEmpty()) {
+            StringBuilder formString = new StringBuilder();
+
+            // CRITICAL FIX: RestAssured interface says Map<String, String>, but implementation returns Map<String, Object>.
+            // We strictly cast to Map<String, Object> to avoid ClassCastException when value is a List.
+            @SuppressWarnings("unchecked")
+            Map<String, Object> formParams = (Map<String, Object>) (Map) requestSpec.getFormParams();
+
+            for (Map.Entry<String, Object> entry : formParams.entrySet()) {
+                String key = entry.getKey();
+                Object value = entry.getValue();
+
+                if (value instanceof List) {
+                    // Handle multi-value fields like 'street[]'
+                    for (Object v : (List<?>) value) {
+                        if (formString.length() > 0) formString.append("&");
+                        formString.append(key).append("=").append(v);
+                    }
+                } else {
+                    // Handle standard single value fields
+                    if (formString.length() > 0) formString.append("&");
+                    formString.append(key).append("=").append(value);
+                }
+            }
+            curl.append(" \\\n--data-raw '").append(formString).append("'");
         }
 
         curl.append("\n--------------------------------------------------------------------------------");
         log.info(curl.toString());
+    }
+
+    private String buildFullUrl(FilterableRequestSpecification requestSpec) {
+        String url = requestSpec.getURI();
+        Map<String, String> queryParams = requestSpec.getQueryParams();
+
+        if (!queryParams.isEmpty()) {
+            String queryString = queryParams.entrySet().stream()
+                    .map(e -> e.getKey() + "=" + e.getValue())
+                    .collect(Collectors.joining("&"));
+
+            if (url.contains("?")) {
+                url += "&" + queryString;
+            } else {
+                url += "?" + queryString;
+            }
+        }
+        return url;
+    }
+
+    private boolean isPrintable(String contentType) {
+        return contentType != null && (contentType.contains("json") || contentType.contains("xml") || contentType.contains("text"));
     }
 }

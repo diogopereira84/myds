@@ -18,32 +18,26 @@ import org.springframework.beans.factory.annotation.Autowired;
 
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 @Slf4j
 public class CommonCheckoutSteps {
 
-    @Autowired
-    private CatalogService catalogService;
-    @Autowired
-    private TestContext testContext;
-    @Autowired
-    private CartService cartService;
-    @Autowired
-    private CheckoutService checkoutService;
-    @Autowired
-    private MiraklAdminTriggerService miraklAdminTriggerService;
-    @Autowired
-    private ObjectMapper objectMapper;
-    @Autowired
-    private OfferService offerService;
-    @Autowired
-    private SessionService sessionService;
-    @Autowired
-    private ConfiguratorService configuratorService; // Added for 1P
+    @Autowired private CatalogService catalogService;
+    @Autowired private TestContext testContext;
+    @Autowired private CartService cartService;
+    @Autowired private CheckoutService checkoutService;
+    @Autowired private MiraklAdminTriggerService miraklAdminTriggerService;
+    @Autowired private ObjectMapper objectMapper;
+    @Autowired private OfferService offerService;
+    @Autowired private SessionService sessionService;
+    @Autowired private ConfiguratorService configuratorService;
 
     // Default Test Card Data
     private static final String CARD_NUMBER_RAW = "4111111111111111";
@@ -58,10 +52,6 @@ public class CommonCheckoutSteps {
         assertNotNull(sessionService.getFormKey(), "Form Key must be extracted");
     }
 
-    /**
-     * Unified Step for Adding Products (1P and 3P).
-     * Decides flow based on 'sellerModel' column in DataTable.
-     */
     @When("I search and add the following products to the cart:")
     public void iSearchAndAddTheFollowingProductsToTheCart(DataTable table) {
         List<Map<String, String>> rows = table.asMaps(String.class, String.class);
@@ -69,49 +59,39 @@ public class CommonCheckoutSteps {
         for (Map<String, String> row : rows) {
             String productName = row.get("productName");
             String quantity = row.get("quantity");
-            // Default to "3P" for retrocompatibility with existing feature files
+            // Default to "3P" for retrocompatibility
             String sellerModel = row.getOrDefault("sellerModel", "3P");
 
             log.info("--- Processing Item: {} (Qty: {}, Model: {}) ---", productName, quantity, sellerModel);
 
-            // 1. Unified Search using Strategy
             String sku = catalogService.searchProductSku(productName, sellerModel);
             assertNotNull(sku, "SKU not found for: " + productName);
 
-            // 2. Branch Logic based on Model
             if ("1P".equalsIgnoreCase(sellerModel)) {
-                // --- 1P Flow ---
                 String partnerId = resolve1PPartnerId(productName);
                 configuratorService.add1PConfiguredItemToCart(sku, partnerId, Integer.parseInt(quantity));
             } else {
-                // --- 3P Flow (Default) ---
                 String offerId = offerService.getOfferIdForProduct(sku);
                 cartService.addToCart(sku, quantity, offerId);
                 testContext.setCurrentOfferId(offerId);
             }
 
-            // 3. Update Shared State
+            // Persist the model for later steps
             testContext.setCurrentSku(sku);
+            testContext.setSellerModel(sellerModel);
         }
     }
 
-    // Moved/Adapted from FedEx1PSteps
     private String resolve1PPartnerId(String productName) {
-        // This mapping could be moved to properties or DB if it grows
-        if (productName.equalsIgnoreCase("Flyers")) {
-            return "CVAFLY1020";
-        }
-        return "CVAFLY1020"; // Default fallback
+        return "CVAFLY1020";
     }
-
-    // --- Remaining Checkout Steps (Unchanged) ---
 
     @Then("I check the cart html")
     public void iCheckTheCartHtml() {
         CartContext cartData = testContext.getCartData();
-        String maskedQuoteId = cartData.getMaskedQuoteId();
-        if (isNullOrEmpty(maskedQuoteId)) throw new RuntimeException("The attribute maskedQuoteId is null or empty!");
-
+        if (cartData == null || isNullOrEmpty(cartData.getMaskedQuoteId())) {
+            throw new RuntimeException("Masked Quote ID missing. Cannot check cart totals.");
+        }
         cartService.checkCartTotalsInformation(cartData.getMaskedQuoteId());
     }
 
@@ -123,7 +103,7 @@ public class CommonCheckoutSteps {
         testContext.setCartData(cartData);
 
         if (isNullOrEmpty(cartData.getQuoteId()) && isNullOrEmpty(cartData.getMaskedQuoteId())) {
-            fail("CRITICAL: Scrape failed to retrieve ANY Quote ID. Cart page might not be loaded correctly.");
+            fail("CRITICAL: Scrape failed to retrieve ANY Quote ID.");
         }
     }
 
@@ -134,23 +114,46 @@ public class CommonCheckoutSteps {
 
         if (isNullOrEmpty(quoteIdToUse)) throw new RuntimeException("Cannot Estimate Shipping: IDs missing.");
 
+        log.info("--- [Step] Estimating Shipping for Quote: {} ---", quoteIdToUse);
+
         EstimateShippingRequest request = TestDataFactory.createEstimateRequest();
         EstimateShipMethodResponse[] methods = checkoutService.estimateShipping(quoteIdToUse, request);
+        assertNotNull(methods, "Shipping methods API returned null");
+
+        log.info("Available Shipping Methods: {}",
+                Arrays.stream(methods).map(EstimateShipMethodResponse::getMethodCode).collect(Collectors.joining(", ")));
 
         EstimateShipMethodResponse selected = null;
         for (EstimateShipMethodResponse m : methods) {
-            if (m.getMethodCode().equals(methodCode)) {
+            if (m.getMethodCode().equalsIgnoreCase(methodCode)) {
                 selected = m;
                 break;
             }
         }
-        if (selected == null && methods.length > 0) selected = methods[0];
+
+        if (selected == null) {
+            if (methods.length > 0) {
+                log.warn("Requested method '{}' not found. Defaulting to first available: {}", methodCode, methods[0].getMethodCode());
+                selected = methods[0];
+            } else {
+                fail("No shipping methods available for selection.");
+            }
+        }
+
+        log.info("SELECTED METHOD: {} (Amount: {})", selected.getMethodCode(), selected.getAmount());
         testContext.setSelectedShippingMethod(selected);
     }
 
     @And("I retrieve the delivery rate")
     public void iRetrieveTheDeliveryRate() {
-        DeliveryRateRequestForm form = TestDataFactory.createRateForm(testContext.getSelectedShippingMethod());
+        // Retrieve the seller model saved in previous step
+        String sellerModel = testContext.getSellerModel() != null ? testContext.getSellerModel() : "3P";
+
+        log.info("Retrieving Delivery Rate (Model: {})", sellerModel);
+
+        // Pass model to Factory to generate correct 1P/3P payload
+        DeliveryRateRequestForm form = TestDataFactory.createRateForm(testContext.getSelectedShippingMethod(), sellerModel);
+
         JsonNode response = checkoutService.getDeliveryRate(form);
         testContext.setRateResponse(response);
     }
@@ -177,16 +180,21 @@ public class CommonCheckoutSteps {
 
         JsonNode rootNode = objectMapper.readTree(responseBody);
 
-        if (rootNode.has("unified_data_layer") && rootNode.path("unified_data_layer").has("orderNumber")) {
-            String orderNumber = rootNode.path("unified_data_layer").path("orderNumber").asText();
-            if (!isNullOrEmpty(orderNumber)) {
-                log.info("SUCCESS: Order Placed! Number: {}", orderNumber);
-                testContext.setPlacedOrderNumber(orderNumber);
+        if (rootNode.has("unified_data_layer")) {
+            testContext.setUnifiedDataLayer(rootNode.path("unified_data_layer"));
+            if (rootNode.path("unified_data_layer").has("orderNumber")) {
+                String orderNumber = rootNode.path("unified_data_layer").path("orderNumber").asText();
+                if (!isNullOrEmpty(orderNumber)) {
+                    log.info("SUCCESS: Order Placed! Number: {}", orderNumber);
+                    testContext.setPlacedOrderNumber(orderNumber);
+                } else {
+                    fail("Order Submission: 'orderNumber' field was empty.");
+                }
             } else {
-                fail("Order Submission: 'orderNumber' field was empty.");
+                fail("Order Submission Failed: Response missing 'unified_data_layer.orderNumber'.\nBody: " + responseBody);
             }
         } else {
-            fail("Order Submission Failed: Response missing 'unified_data_layer.orderNumber'.\nBody: " + responseBody);
+            fail("Order Submission Failed: Response missing 'unified_data_layer'.\nBody: " + responseBody);
         }
 
         try {
@@ -208,6 +216,8 @@ public class CommonCheckoutSteps {
         log.info("VERIFIED: Order Number '{}' is present.", testContext.getPlacedOrderNumber());
     }
 
+    // --- BDD Verification Steps ---
+
     @And("I verify the order contact details:")
     public void iVerifyTheOrderContactDetails(DataTable dataTable) {
         verifyCheckoutDetailsExist();
@@ -223,6 +233,7 @@ public class CommonCheckoutSteps {
     public void iVerifyTheTransactionPaymentDetails(DataTable dataTable) {
         verifyCheckoutDetailsExist();
         JsonNode tenders = testContext.getCheckoutDetails().path("tenders");
+        if (tenders.isEmpty()) fail("No tender details found");
         JsonNode tenderNode = tenders.get(0);
         Map<String, String> expected = dataTable.asMap(String.class, String.class);
 
@@ -246,23 +257,66 @@ public class CommonCheckoutSteps {
     @And("I verify the product line items:")
     public void iVerifyProductLineItems(DataTable dataTable) {
         verifyCheckoutDetailsExist();
-        JsonNode productLines = getFirstLineItemContainer().path("productLines");
+        JsonNode container = getFirstLineItemContainer();
+        JsonNode productLines = container.path("productLines");
+
+        if (productLines.isMissingNode() || productLines.isEmpty()) {
+            log.warn("Validation Warning: 'productLines' array is missing or empty in the checkout response.");
+            log.info("Container Node: {}", container);
+        }
+
         List<Map<String, String>> expectedItems = dataTable.asMaps(String.class, String.class);
 
         for (Map<String, String> expected : expectedItems) {
             String expectedName = expected.get("productName");
             int expectedQty = Integer.parseInt(expected.get("quantity"));
             boolean found = false;
+            List<String> seenProducts = new ArrayList<>();
 
             for (JsonNode actualItem : productLines) {
-                if (actualItem.path("name").asText().contains(expectedName)) {
-                    assertEquals(expectedQty, actualItem.path("unitQuantity").asInt());
+                String name = actualItem.path("name").asText();
+                String userProductName = actualItem.path("userProductName").asText();
+                seenProducts.add(String.format("[name=%s, userProductName=%s]", name, userProductName));
+
+                if (name.contains(expectedName) || userProductName.contains(expectedName)) {
+                    assertEquals(expectedQty, actualItem.path("unitQuantity").asInt(), "Quantity mismatch for " + expectedName);
                     found = true;
                     break;
                 }
             }
-            if (!found) fail("Expected Product not found: " + expectedName);
+            if (!found) {
+                fail(String.format("Expected Product not found: %s. Available items: %s", expectedName, seenProducts));
+            }
         }
+    }
+
+    @And("I verify the unified data layer:")
+    public void iVerifyTheUnifiedDataLayer(DataTable dataTable) {
+        if (testContext.getUnifiedDataLayer() == null) {
+            fail("Unified Data Layer is null.");
+        }
+        JsonNode udl = testContext.getUnifiedDataLayer();
+        Map<String, String> expected = dataTable.asMap(String.class, String.class);
+
+        expected.forEach((key, value) -> {
+            if (udl.has(key)) {
+                assertEquals(value, udl.path(key).asText(), "Mismatch for key: " + key);
+            } else {
+                fail("Unified Data Layer missing key: " + key);
+            }
+        });
+    }
+
+    @And("I verify the order totals:")
+    public void iVerifyTheOrderTotals(DataTable dataTable) {
+        verifyCheckoutDetailsExist();
+        JsonNode transactionTotals = testContext.getCheckoutDetails().path("transactionTotals");
+        Map<String, String> expected = dataTable.asMap(String.class, String.class);
+
+        if (expected.containsKey("grossAmount")) assertEquals(expected.get("grossAmount"), transactionTotals.path("grossAmount").asText());
+        if (expected.containsKey("netAmount")) assertEquals(expected.get("netAmount"), transactionTotals.path("netAmount").asText());
+        if (expected.containsKey("taxAmount")) assertEquals(expected.get("taxAmount"), transactionTotals.path("taxAmount").asText());
+        if (expected.containsKey("totalAmount")) assertEquals(expected.get("totalAmount"), transactionTotals.path("totalAmount").asText());
     }
 
     @And("I trigger the order export to Mirakl")
@@ -274,6 +328,7 @@ public class CommonCheckoutSteps {
         JsonNode lineItems = testContext.getCheckoutDetails().path("lineItems");
         if (lineItems.isEmpty()) fail("Verification Failed: 'lineItems' array is empty.");
         JsonNode firstItem = lineItems.get(0);
+        // 1P orders might have 'retailPrintOrderDetails'
         if (firstItem.has("retailPrintOrderDetails") && !firstItem.path("retailPrintOrderDetails").isEmpty()) {
             return firstItem.path("retailPrintOrderDetails").get(0);
         }

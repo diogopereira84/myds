@@ -1,6 +1,7 @@
 package com.fedex.automation.model.fedex;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -12,11 +13,10 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 @JsonIgnoreProperties(ignoreUnknown = true)
+@JsonInclude(JsonInclude.Include.NON_NULL) // Fix: Prevents null fields from being sent
 public class EstimateShippingRequest {
 
-    // Added field for Step 3 fix
-    @JsonProperty("pickup")
-    private boolean pickup;
+    // Removed "pickup" field to match UI sample exactly (only "isPickup" is needed)
 
     @JsonProperty("address")
     private Address address;
@@ -35,6 +35,7 @@ public class EstimateShippingRequest {
     @NoArgsConstructor
     @AllArgsConstructor
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL) // Fix: Prevents "label": null
     public static class CustomAttribute {
         @JsonProperty("attribute_code")
         private String attributeCode;
