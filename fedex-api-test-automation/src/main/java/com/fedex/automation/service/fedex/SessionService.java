@@ -19,6 +19,7 @@ import static io.restassured.RestAssured.given;
 public class SessionService {
 
     @Value("${base.url}")
+    @Getter
     private String baseUrl;
 
     @Autowired
@@ -38,7 +39,6 @@ public class SessionService {
     public void login(String username, String password) {
         log.info("--- Performing Login for User: {} ---", username);
 
-        // 2. Normal Flow
         if (sessionCookies.isEmpty()) {
             bootstrapSession();
         }
@@ -56,27 +56,46 @@ public class SessionService {
         bootstrapSession();
     }
 
-    private void parseManualCookies(String cookieString) {
-        String[] parts = cookieString.split(";");
-        for (String part : parts) {
-            String[] kv = part.trim().split("=", 2);
-            if (kv.length == 2) {
-                this.sessionCookies.put(kv[0].trim(), kv[1].trim());
-            }
-        }
+    // Default method for standard requests
+    public RequestSpecification authenticatedRequest() {
+        return authenticatedRequest(null);
     }
 
-    public RequestSpecification authenticatedRequest() {
+    // Overloaded method to merge specific per-request cookies (like quoteId) securely
+    public RequestSpecification authenticatedRequest(Map<String, String> extraCookies) {
         RequestSpecification spec = given()
                 .spec(defaultRequestSpec)
-                .baseUri(baseUrl);
+                .baseUri(baseUrl)
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0")
+                .header("Origin", baseUrl)
+                .header("Referer", baseUrl + "/")
+                .header("sec-fetch-dest", "empty")
+                .header("sec-fetch-mode", "cors")
+                .header("sec-fetch-site", "same-origin");
 
-        if (!sessionCookies.isEmpty()) {
-            spec.cookies(sessionCookies);
+        // Merge all cookies into a single valid Cookie header to prevent duplicate header drops
+        StringBuilder cookieBuilder = new StringBuilder();
+
+        for (Map.Entry<String, String> entry : sessionCookies.entrySet()) {
+            cookieBuilder.append(entry.getKey()).append("=").append(entry.getValue()).append("; ");
+        }
+
+        if (extraCookies != null) {
+            for (Map.Entry<String, String> entry : extraCookies.entrySet()) {
+                cookieBuilder.append(entry.getKey()).append("=").append(entry.getValue()).append("; ");
+            }
         }
 
         if (formKey != null && !formKey.isBlank()) {
-            spec.cookie("form_key", formKey);
+            cookieBuilder.append("form_key=").append(formKey).append("; ");
+        }
+
+        if (cookieBuilder.length() > 0) {
+            String rawCookieHeader = cookieBuilder.toString().trim();
+            if (rawCookieHeader.endsWith(";")) {
+                rawCookieHeader = rawCookieHeader.substring(0, rawCookieHeader.length() - 1);
+            }
+            spec.header("Cookie", rawCookieHeader);
         }
 
         return spec;
@@ -91,7 +110,7 @@ public class SessionService {
                     .extract()
                     .response();
 
-            if (response.getCookies() != null) {
+            if (response.getCookies() != null && !response.getCookies().isEmpty()) {
                 this.sessionCookies.putAll(response.getCookies());
             }
 

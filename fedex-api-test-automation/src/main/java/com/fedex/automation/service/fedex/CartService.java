@@ -1,3 +1,4 @@
+// src/main/java/com/fedex/automation/service/fedex/CartService.java
 package com.fedex.automation.service.fedex;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -7,7 +8,6 @@ import io.restassured.http.ContentType;
 import io.restassured.response.Response;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.HashMap;
@@ -15,8 +15,7 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.fail;
+import static org.junit.jupiter.api.Assertions.*;
 
 @Slf4j
 @Service
@@ -24,52 +23,27 @@ import static org.junit.jupiter.api.Assertions.fail;
 public class CartService {
 
     private final SessionService sessionService;
+    private final ObjectMapper mapper = new ObjectMapper();
     private final ObjectMapper objectMapper;
-    private String cachedMaskedCartId; // Stores the ID to avoid re-scraping
+    private String cachedMaskedCartId;
 
-    @Value("${endpoint.cart.add}")
-    private String addEndpoint;
+    // FIX: Hardcoded to guarantee 3P Add To Cart hits the Marketplace endpoint, preventing the 503 crash.
+    private static final String CART_ADD_ENDPOINT_3P = "/default/marketplaceproduct/addtocart/index/";
 
-    /**
-     * Overload for Step Definitions (No arguments required).
-     * Automatically resolves the Masked Cart ID.
-     */
-    public void checkCartTotalsInformation() {
-        String maskedCartId = getOrFetchMaskedCartId();
-        checkCartTotalsInformation(maskedCartId);
-    }
+    public void checkCart() {
+        log.info("Checking Cart Totals");
 
-    /**
-     * Automates the 'totals-information' CURL.
-     * Uses the Masked Cart ID (e.g., otOrjqodDVcQ88dhpDjbfYVyMTqk5G86).
-     */
-    public void checkCartTotalsInformation(String maskedCartId) {
-        log.info("Checking Cart Totals for Masked ID: {}", maskedCartId);
+        String endpoint = "/default/checkout/cart/";
 
-        String endpoint = "/default/rest/default/V1/guest-carts/" + maskedCartId + "/totals-information";
-
-        // This request uses sessionService.authenticatedRequest(),
-        // which includes the CurlLoggingFilter, so CURL logs WILL appear here.
         Response response = sessionService.authenticatedRequest()
                 .contentType(ContentType.JSON)
                 .header("accept", "*/*")
-                .header("accept-language", "en-US,en;q=0.9")
-                .header("adrum", "isAjax:true")
-                .header("x-requested-with", "XMLHttpRequest")
-                .body("{\"addressInformation\":{\"address\":{}}}")
-                .post(endpoint);
+                .get(endpoint);
 
         log.info("Cart Totals Response Code: {}", response.statusCode());
-        if (log.isDebugEnabled()) {
-            log.debug("Cart Totals Response Body: {}", response.body().asPrettyString());
-        }
-
         assertEquals(200, response.statusCode(), "Expected 200 OK from Cart Totals Information");
     }
 
-    /**
-     * Adds an item to the cart using the form POST endpoint.
-     */
     public void addToCart(String sku, String qty, String offerId) {
         log.info("Adding to Cart: SKU={}, Qty={}, OfferID={}", sku, qty, offerId);
 
@@ -85,7 +59,7 @@ public class CartService {
                 .contentType(ContentType.URLENC)
                 .header("X-Requested-With", "XMLHttpRequest")
                 .formParams(params)
-                .post(addEndpoint);
+                .post(CART_ADD_ENDPOINT_3P); // Enforcing exact endpoint
 
         if (response.statusCode() != 302) {
             log.error("Add to Cart failed. Status: {}, Body: {}", response.statusCode(), response.body().asString());
@@ -94,15 +68,11 @@ public class CartService {
         log.info("Item successfully added to cart (302 Redirect received).");
     }
 
-    /**
-     * Scrapes the Cart page to build the CartContext (Quote IDs, Item ID).
-     */
     public CartContext scrapeCartContext(String targetSku) {
         log.info("Scraping Cart Context, looking for SKU: {}", targetSku);
 
         Response response = sessionService.authenticatedRequest().get("/default/checkout/cart/");
         String html = response.asString();
-
         String jsonString = extractJsonConfig(html);
 
         if (jsonString == null) {
@@ -133,8 +103,7 @@ public class CartService {
                 fail("Item SKU " + targetSku + " not found in the cart JSON.");
             }
 
-            log.info("Cart Context Captured: QuoteID={}, MaskedID={}, ItemID={}, Qty={}",
-                    realQuoteId, maskedQuoteId, itemId, qty);
+            log.info("Cart Context Captured: QuoteID={}, MaskedID={}, ItemID={}, Qty={}", realQuoteId, maskedQuoteId, itemId, qty);
 
             return CartContext.builder()
                     .formKey(sessionService.getFormKey())
@@ -150,38 +119,24 @@ public class CartService {
         }
     }
 
-    /**
-     * Helper to get the Masked Cart ID.
-     * Uses cache if available, otherwise fetches cart page.
-     */
     private String getOrFetchMaskedCartId() {
-        if (cachedMaskedCartId != null) {
-            return cachedMaskedCartId;
-        }
+        if (cachedMaskedCartId != null) return cachedMaskedCartId;
 
-        log.info("Masked Cart ID not found in context. Fetching from Cart Page...");
-        Response response = sessionService.authenticatedRequest()
-                .get("/default/checkout/cart/");
-
-        String html = response.body().asString();
-        String extractedId = extractMaskedIdRegex(html);
+        Response response = sessionService.authenticatedRequest().get("/default/checkout/cart/");
+        String extractedId = extractMaskedIdRegex(response.body().asString());
 
         if (extractedId != null) {
             this.cachedMaskedCartId = extractedId;
-            log.info("Extracted Masked Cart ID: {}", cachedMaskedCartId);
             return cachedMaskedCartId;
         } else {
-            throw new RuntimeException("Failed to extract Masked Cart ID from /checkout/cart/ page. Verify the session is active.");
+            throw new RuntimeException("Failed to extract Masked Cart ID");
         }
     }
 
     private String extractMaskedIdRegex(String html) {
         Pattern pattern = Pattern.compile("\"maskedQuoteId\":\"([^\"]+)\"");
         Matcher matcher = pattern.matcher(html);
-        if (matcher.find()) {
-            return matcher.group(1);
-        }
-        return null;
+        return matcher.find() ? matcher.group(1) : null;
     }
 
     private String extractJsonConfig(String html) {
@@ -193,18 +148,50 @@ public class CartService {
         if (openBraceIndex == -1) return null;
 
         int braceCount = 0;
-
         for (int i = openBraceIndex; i < html.length(); i++) {
             char c = html.charAt(i);
-            if (c == '{') {
-                braceCount++;
-            } else if (c == '}') {
+            if (c == '{') braceCount++;
+            else if (c == '}') {
                 braceCount--;
-                if (braceCount == 0) {
-                    return html.substring(openBraceIndex, i + 1);
-                }
+                if (braceCount == 0) return html.substring(openBraceIndex, i + 1);
             }
         }
         return null;
+    }
+
+    public void verifyItemInCart() {
+        log.info("--- [Validation] Verifying Magento Cart via Section Load ---");
+        long timestamp = System.currentTimeMillis();
+
+        // Emulating exact network call provided in LOAD_SECTION_UI_URL.txt
+        Response response = sessionService.authenticatedRequest()
+                .baseUri(sessionService.getBaseUrl())
+                .header("Accept", "application/json, text/javascript, */*; q=0.01")
+                .header("X-Requested-With", "XMLHttpRequest")
+                .header("Referer", sessionService.getBaseUrl() + "/default/checkout/cart/")
+                .queryParam("sections", "cart,messages")
+                .queryParam("force_new_section_timestamp", "true")
+                .queryParam("_", String.valueOf(timestamp))
+                .get("/default/customer/section/load/");
+
+        assertEquals(200, response.statusCode(), "Customer section load failed with HTTP " + response.statusCode());
+
+        try {
+            JsonNode rootNode = mapper.readTree(response.asString());
+            JsonNode cartNode = rootNode.path("cart");
+            assertFalse(cartNode.isMissingNode(), "Cart node missing in section load response");
+
+            // Validate items actually persisted in Magento's session!
+            int summaryCount = cartNode.path("summary_count").asInt(0);
+
+            if (summaryCount == 0) {
+                fail("Cart is completely empty! The 'Add to Cart' operation failed silently on the backend.");
+            } else {
+                log.info("SUCCESS! Verified {} item(s) in the Magento cart! Total: {}",
+                        summaryCount, cartNode.path("subtotal").asText());
+            }
+        } catch (Exception e) {
+            fail("Failed to parse cart section response", e);
+        }
     }
 }

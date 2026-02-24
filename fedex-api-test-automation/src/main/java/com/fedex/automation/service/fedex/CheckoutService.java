@@ -10,6 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.util.Map;
 import java.util.Objects;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -133,12 +134,14 @@ public class CheckoutService {
         try {
             String jsonData = objectMapper.writeValueAsString(request);
 
-            Response response = sessionService.authenticatedRequest()
-                    .cookie("quoteId", quoteId)
+            // Pass quoteId safely into our single Cookie Header builder
+            Map<String, String> checkoutCookies = new java.util.HashMap<>();
+            checkoutCookies.put("quoteId", quoteId);
+
+            Response response = sessionService.authenticatedRequest(checkoutCookies)
                     .contentType("application/x-www-form-urlencoded; charset=UTF-8")
                     .header("X-Requested-With", "XMLHttpRequest")
                     .header("Referer", baseUrl + "/default/checkout")
-                    .header("Origin", baseUrl)
                     .queryParam("pickstore", "0")
                     .formParam("data", jsonData)
                     .post(submitOrderEndpoint);

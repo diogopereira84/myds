@@ -3,9 +3,12 @@ Feature: Essendant 3P Order Creation by Vendor Alone - Product Checkout Flow
   # Variation 1: Single Item (As requested: "what about single item")
   Scenario: 3P Order Creation by Vendor Alone Essendant Single Item Order (Qty 1)
     Given I initialize the FedEx session
-    And I search and add the following products to the cart:
-      | productName                                                  | quantity |
-      | ACCO Metal Book Rings, 1.5 in. Diameter, 100/Box             | 1        |
+    When I search for the following products:
+      | productName                                      |
+      | ACCO Metal Book Rings, 1.5 in. Diameter, 100/Box |
+    And I add the following products to the cart:
+      | productName                                      | quantity |
+      | ACCO Metal Book Rings, 1.5 in. Diameter, 100/Box | 1        |
     And I scrape the cart context data
     And I estimate shipping methods and select "FREE_GROUND_US"
     And I retrieve the delivery rate
@@ -33,7 +36,11 @@ Feature: Essendant 3P Order Creation by Vendor Alone - Product Checkout Flow
   # Variation 2: Multi-Item with Mixed Quantities
   Scenario: 3P Order Creation by Vendor Alone Essendant Multi-Item Order with Mixed Quantities
     Given I initialize the FedEx session
-    And I search and add the following products to the cart:
+    When I search for the following products:
+      | productName                                                                      |
+      | ACCO Metal Book Rings, 1.5 in. Diameter, 100/Box                                 |
+      | Sharpie Liquid Pen Style Highlighters, Fluorescent Yellow Ink, Chisel Tip, Dozen |
+    And I add the following products to the cart:
       | productName                                                                      | quantity |
       | ACCO Metal Book Rings, 1.5 in. Diameter, 100/Box                                 | 1        |
       | Sharpie Liquid Pen Style Highlighters, Fluorescent Yellow Ink, Chisel Tip, Dozen | 2        |
@@ -66,7 +73,11 @@ Feature: Essendant 3P Order Creation by Vendor Alone - Product Checkout Flow
   # Variation 3: Bulk Order (2 of each)
   Scenario: 3P Order Creation by Vendor Alone Essendant Bulk Order (2 of each)
     Given I initialize the FedEx session
-    And I search and add the following products to the cart:
+    When I search for the following products:
+      | productName                                                                      |
+      | ACCO Metal Book Rings, 1.5 in. Diameter, 100/Box                                 |
+      | Sharpie Liquid Pen Style Highlighters, Fluorescent Yellow Ink, Chisel Tip, Dozen |
+    And I add the following products to the cart:
       | productName                                                                      | quantity |
       | ACCO Metal Book Rings, 1.5 in. Diameter, 100/Box                                 | 2        |
       | Sharpie Liquid Pen Style Highlighters, Fluorescent Yellow Ink, Chisel Tip, Dozen | 2        |
@@ -86,6 +97,3 @@ Feature: Essendant 3P Order Creation by Vendor Alone - Product Checkout Flow
       | productName           | quantity |
       | ACCO Metal Book Rings | 2        |
       | Sharpie Liquid Pen    | 2        |
-
- # Scenario: Registered user adds item to cart
- #   Given I am logged in as a registered user with username "diogomp8484" and password "SenhaForte123"

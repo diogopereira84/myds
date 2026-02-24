@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fedex.automation.context.TestContext;
 import com.fedex.automation.model.fedex.*;
 import com.fedex.automation.service.fedex.*;
+import com.fedex.automation.service.mirakl.MiraklAdminTriggerService;
 import com.fedex.automation.service.mirakl.OfferService;
 import com.fedex.automation.utils.FedExEncryptionUtil;
 import com.fedex.automation.utils.TestDataFactory;
@@ -82,17 +83,74 @@ public class CommonCheckoutSteps {
         }
     }
 
+    // --- NEW: Step 1 - Isolated Search Step ---
+    @When("I search for the following products:")
+    public void iSearchForTheFollowingProducts(DataTable table) {
+        List<Map<String, String>> rows = table.asMaps(String.class, String.class);
+        testContext.getSearchedProducts().clear();
+
+        for (Map<String, String> row : rows) {
+            String productName = row.get("productName");
+            String sellerModel = row.getOrDefault("sellerModel", "3P");
+
+            log.info("--- Processing Search: {} (Model: {}) ---", productName, sellerModel);
+
+            String sku = catalogService.searchProductSku(productName, sellerModel);
+            assertNotNull(sku, "SKU not found for: " + productName);
+
+            TestContext.ProductItemContext itemContext = new TestContext.ProductItemContext();
+            itemContext.setProductName(productName);
+            itemContext.setSku(sku);
+            itemContext.setSellerModel(sellerModel);
+
+            // Fetch OfferID exclusively for 3P products
+            if ("3P".equalsIgnoreCase(sellerModel)) {
+                String offerId = offerService.getOfferIdForProduct(sku);
+                itemContext.setOfferId(offerId);
+            }
+
+            testContext.getSearchedProducts().add(itemContext);
+
+            // Persist the last item searched to shared context for legacy steps
+            testContext.setCurrentSku(sku);
+            testContext.setSellerModel(sellerModel);
+            if (itemContext.getOfferId() != null) testContext.setCurrentOfferId(itemContext.getOfferId());
+        }
+    }
+
+    // --- NEW: Step 2 - Isolated Add To Cart Step ---
+    @And("I add the following products to the cart:")
+    public void iAddTheFollowingProductsToTheCart(DataTable table) {
+        List<Map<String, String>> rows = table.asMaps(String.class, String.class);
+
+        for (Map<String, String> row : rows) {
+            String productName = row.get("productName");
+            String quantity = row.get("quantity");
+
+            // Look up the product details we just searched for
+            TestContext.ProductItemContext item = testContext.getSearchedProducts().stream()
+                    .filter(p -> p.getProductName().equalsIgnoreCase(productName))
+                    .findFirst()
+                    .orElseThrow(() -> new RuntimeException("Product not found in search context. Did you run the search step? Product: " + productName));
+
+            log.info("--- Adding Item to Cart: {} (Qty: {}, Model: {}) ---", productName, quantity, item.getSellerModel());
+
+            if ("1P".equalsIgnoreCase(item.getSellerModel())) {
+                String partnerId = resolve1PPartnerId(productName);
+                configuratorService.add1PConfiguredItemToCart(item.getSku(), partnerId, Integer.parseInt(quantity));
+            } else {
+                cartService.addToCart(item.getSku(), quantity, item.getOfferId());
+            }
+        }
+    }
+
     private String resolve1PPartnerId(String productName) {
         return "CVAFLY1020";
     }
 
     @Then("I check the cart html")
     public void iCheckTheCartHtml() {
-        CartContext cartData = testContext.getCartData();
-        if (cartData == null || isNullOrEmpty(cartData.getMaskedQuoteId())) {
-            throw new RuntimeException("Masked Quote ID missing. Cannot check cart totals.");
-        }
-        cartService.checkCartTotalsInformation(cartData.getMaskedQuoteId());
+        cartService.checkCart();
     }
 
     @And("I scrape the cart context data")

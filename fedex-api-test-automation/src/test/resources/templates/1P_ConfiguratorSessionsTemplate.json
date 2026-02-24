@@ -1,0 +1,417 @@
+{
+  "configuratorSessionParameters": {
+    "integrationDetails": {
+      "integratorId": "POD2.0",
+      "integrationType": "URL_REDIRECT"
+    },
+    "configuratorOptions": {
+      "addToCartCTAText": "",
+      "allowFileUpload": true,
+      "allowProjectNameChange": true,
+      "allowQuantityChange": true,
+      "skuOnlyProductID": "1695219572266",
+      "documents": [
+        {}
+      ],
+      "documentUploadConfigurations": {
+        "cloudDriveFlags": {
+          "enableCloudDrives": true,
+          "enableBox": "true",
+          "enableDropbox": "true",
+          "enableGoogleDrive": "true",
+          "enableMicrosoftOneDrive": "true"
+        },
+        "extendFileRetention": false,
+        "hideFileExpirationText": true,
+        "documentRetentionPeriod": {
+          "units": "HOURS",
+          "value": 24
+        }
+      },
+      "configurationType": "NEW",
+      "convertToSizeModalText": "Your file does not match any of our standard sizes. Please convert your file to a standard size below or visit our <link>All Product Page<link> to see more product options available",
+      "convertToSizeModalTextLink": "https://staging2.office.fedex.com/all-print-products.html",
+      "enableUserProvidedInstructions": "true",
+      "expressCheckoutButtonEnabled": false,
+      "footerOptions": {
+        "type": "CUSTOM",
+        "backgroundColor": "#4d148c",
+        "text": "© FedEx 1995–2025",
+        "textColor": "#ffffff",
+        "rightFooterLinks": [
+          {
+            "text": "Site Map",
+            "link": "https://staging2.office.fedex.com/default/sitemap.html"
+          },
+          {
+            "text": "Terms of Use",
+            "link": "https://www.fedex.com/en-us/terms-of-use.html"
+          },
+          {
+            "text": "Security &amp; Privacy",
+            "link": "https://www.fedex.com/en-us/trust-center.html"
+          }
+        ]
+      },
+      "headerOptions": {
+        "type": "CUSTOM",
+        "backgroundColor": "#4d148c",
+        "logoURL": "https://staging2.office.fedex.com/media/wysiwyg/fxo-logo.png",
+        "showLogo": true,
+        "cartCount": "0",
+        "locationsURL": "https://local.fedex.com/en/fxo-only",
+        "cartURL": "https://staging2.office.fedex.com/default/checkout/cart/"
+      },
+      "heartbeat": {
+        "enabled": false,
+        "frequencyInMinutes": 5
+      },
+      "navigationOptions": {
+        "allProductsPageUrl": "https://staging2.office.fedex.com/all-print-products.html",
+        "successRedirectUrl": "https://staging2.office.fedex.com/default/configurator/index/index/responseid",
+        "exitRedirectUrl": "https://staging2.office.fedex.com/default/copies.html",
+        "exitRedirectUrlLabel": "Back"
+      },
+      "priceDisplaySettings": {
+        "showDiscountDetails": true,
+        "showPrice": true,
+        "showPriceDetails": true
+      },
+      "primaryCTA": {},
+      "productSelector": {
+        "productId": "1534436209752-4-3"
+      },
+      "product": {
+        "productionContentAssociations": [],
+        "userProductName": null,
+        "contextKeys": [],
+        "id": "1456773326927",
+        "version": 2,
+        "name": "Multi Sheet",
+        "qty": "1",
+        "priceable": true,
+        "instanceId": 1771825231640,
+        "proofRequired": false,
+        "isOutSourced": false,
+        "features": [
+          {
+            "id": "1448984679218",
+            "name": "Orientation",
+            "choice": {
+              "id": "1449000016192",
+              "name": "Vertical",
+              "properties": [
+                {
+                  "id": "1453260266287",
+                  "name": "PAGE_ORIENTATION",
+                  "value": "PORTRAIT"
+                }
+              ]
+            }
+          },
+          {
+            "id": "1448981554101",
+            "name": "Prints Per Page",
+            "choice": {
+              "id": "1448990257151",
+              "name": "One",
+              "properties": [
+                {
+                  "id": "1455387404922",
+                  "name": "PRINTS_PER_PAGE",
+                  "value": "1"
+                }
+              ]
+            }
+          },
+          {
+            "id": "1448984877869",
+            "name": "Cutting",
+            "choice": {
+              "id": "1448999392195",
+              "name": "None",
+              "properties": []
+            }
+          },
+          {
+            "id": "1448984877645",
+            "name": "Folding",
+            "choice": {
+              "id": "1448999720595",
+              "name": "None",
+              "properties": []
+            }
+          },
+          {
+            "id": "1448984679442",
+            "name": "Lamination",
+            "choice": {
+              "id": "1448999458409",
+              "name": "None",
+              "properties": []
+            }
+          },
+          {
+            "id": "1448981532145",
+            "name": "Collation",
+            "choice": {
+              "id": "1448986654687",
+              "name": "Collated",
+              "properties": [
+                {
+                  "id": "1449069945785",
+                  "name": "COLLATION_TYPE",
+                  "value": "MACHINE"
+                }
+              ]
+            }
+          },
+          {
+            "id": "1680723151283",
+            "name": "Stapling Production",
+            "choice": {
+              "id": "1681184744572",
+              "name": "Machine Finishing",
+              "properties": []
+            }
+          },
+          {
+            "id": "1680724699067",
+            "name": "Hole Punching Production",
+            "choice": {
+              "id": "1681184744573",
+              "name": "Machine Finishing",
+              "properties": []
+            }
+          },
+          {
+            "id": "1680725097331",
+            "name": "Folding Production",
+            "choice": {
+              "id": "1680725112004",
+              "name": "Hand Finishing",
+              "properties": []
+            }
+          },
+          {
+            "id": "1679607670330",
+            "name": "Offset Stacking",
+            "choice": {
+              "id": "1679607688873",
+              "name": "On",
+              "properties": []
+            }
+          },
+          {
+            "id": "1448981549581",
+            "name": "Print Color",
+            "choice": {
+              "id": "1448988600611",
+              "name": "Full Color",
+              "properties": [
+                {
+                  "id": "1453242778807",
+                  "name": "PRINT_COLOR",
+                  "value": "COLOR"
+                }
+              ]
+            }
+          },
+          {
+            "id": "1448981549109",
+            "name": "Paper Size",
+            "choice": {
+              "id": "1448986650332",
+              "name": "8.5x11",
+              "properties": [
+                {
+                  "id": "1449069906033",
+                  "name": "MEDIA_HEIGHT",
+                  "value": "11"
+                },
+                {
+                  "id": "1449069908929",
+                  "name": "MEDIA_WIDTH",
+                  "value": "8.5"
+                },
+                {
+                  "id": "1571841122054",
+                  "name": "DISPLAY_HEIGHT",
+                  "value": "11"
+                },
+                {
+                  "id": "1571841164815",
+                  "name": "DISPLAY_WIDTH",
+                  "value": "8.5"
+                }
+              ]
+            }
+          },
+          {
+            "id": "1448981549741",
+            "name": "Paper Type",
+            "choice": {
+              "id": "1448988664295",
+              "name": "Laser (32 lb.)",
+              "properties": [
+                {
+                  "id": "1450324098012",
+                  "name": "MEDIA_TYPE",
+                  "value": "E32"
+                },
+                {
+                  "id": "1453234015081",
+                  "name": "PAPER_COLOR",
+                  "value": "#FFFFFF"
+                },
+                {
+                  "id": "1471275182312",
+                  "name": "MEDIA_CATEGORY",
+                  "value": "RESUME"
+                }
+              ]
+            }
+          },
+          {
+            "id": "1448981549269",
+            "name": "Sides",
+            "choice": {
+              "id": "1448988124560",
+              "name": "Single-Sided",
+              "properties": [
+                {
+                  "id": "1461774376168",
+                  "name": "SIDE",
+                  "value": "SINGLE"
+                },
+                {
+                  "id": "1471294217799",
+                  "name": "SIDE_VALUE",
+                  "value": "1"
+                }
+              ]
+            }
+          },
+          {
+            "id": "1448981555573",
+            "name": "Hole Punching",
+            "choice": {
+              "id": "1448999902070",
+              "name": "None",
+              "properties": []
+            }
+          }
+        ],
+        "pageExceptions": [],
+        "contentAssociations": [
+          {
+            "purpose": "MAIN_CONTENT",
+            "contentReqId": "1483999952979",
+            "printReady": true,
+            "pageGroups": [
+              {
+                "start": 1,
+                "end": 1,
+                "height": 11,
+                "width": 8.5,
+                "orientation": "PORTRAIT"
+              }
+            ]
+          }
+        ],
+        "properties": [
+          {
+            "id": "1453242488328",
+            "name": "ZOOM_PERCENTAGE",
+            "value": "60"
+          },
+          {
+            "id": "1453243262198",
+            "name": "ENCODE_QUALITY",
+            "value": "100"
+          },
+          {
+            "id": "1453894861756",
+            "name": "LOCK_CONTENT_ORIENTATION",
+            "value": false
+          },
+          {
+            "id": "1453895478444",
+            "name": "MIN_DPI",
+            "value": "150.0"
+          },
+          {
+            "id": "1454950109636",
+            "name": "USER_SPECIAL_INSTRUCTIONS",
+            "value": null
+          },
+          {
+            "id": "1455050109636",
+            "name": "DEFAULT_IMAGE_WIDTH",
+            "value": "8.5"
+          },
+          {
+            "id": "1455050109631",
+            "name": "DEFAULT_IMAGE_HEIGHT",
+            "value": "11"
+          },
+          {
+            "id": "1494365340946",
+            "name": "PREVIEW_TYPE",
+            "value": "DYNAMIC"
+          },
+          {
+            "id": "1470151626854",
+            "name": "SYSTEM_SI",
+            "value": null
+          },
+          {
+            "id": "1470151737965",
+            "name": "TEMPLATE_AVAILABLE",
+            "value": "NO"
+          },
+          {
+            "id": "1490292304798",
+            "name": "MIGRATED_PRODUCT",
+            "value": "true"
+          },
+          {
+            "id": "1490292304799",
+            "name": "CUSTOMER_SI",
+            "value": null
+          },
+          {
+            "id": "1750254073200",
+            "name": "TEMPLATE_VENDOR_CODE",
+            "value": null
+          }
+        ],
+        "externalSkus": []
+      },
+      "uploadToQuote": {
+        "enableUploadToQuote": true,
+        "title": "Continue with quote request?",
+        "message": "Projects with additional print instructions must be reviewed by a FedEx Office Team Member before your order can be submitted for production. You will receive a project quote within 24 hours.",
+        "nonStandardSizeWarningMessage": "We are unable to calculate price for nonstandard page sizes. On the next page please describe how your project should be printed and we will provide you quote within 24 hours."
+      },
+      "sensitiveDataFlow": "false",
+      "singleProjectMode": "false",
+      "userWorkspace": {},
+      "userPreferences": {
+        "accessToken": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzY29wZSI6WyJ0YXouY2xpZW50czp3cml0ZSJdLCJpc3MiOiJ0YXoiLCJleHAiOjE3NzE4NjkzNDEsImF1dGhvcml0aWVzIjpbIm1hZ2VudG8ub3JkZXIiLCJ0YXouc3lzdGVtLnVzZXIiLCJlbWFpbC5wb3N0Il0sImp0aSI6ImE1YWZkYmJkLTE4OTktNDg3ZS05YmVkLTkxNTFmODBmNjYyZCIsImNsaWVudF9pZCI6IjM1MzcxMzFfTUFHRU5UT19QT0RfU0VSVklDRSJ9.flgv5leRfMwQwD4hPpEXh1j3RM4-URQKtRxaPRZo_QNN_dej0IDVF1rtC3z8soBQJf7UIkrjs5YMk7SXuReBaIeIVxeKLPkbScuglKbESnWEpxyAf3PDrp7vXtUfZ8d5-CHTkGfkWy_ZGuFZ3neeIi0jH5rKpCHtEMAxXTLXTmIUIRCKmSMwmRHDYhBdDjKNRPUnj4IuSbCxznnfY-eZsnoQgKLr_sdRGQe4KPIKoqLNqw_K8oQ34SsI7Qfx0C_N50ivENef_lzwwRD8GG70oQzYYOndljqtbrBPdkAYG3KYULmz8tIpQCbiKFWvllRuqw2jBPKQINRApVPzVYXwsBjkGb759CNTEcra_HD0Ht2n5ARmK3UAqIN5f0V1TQIsqG2AL-OeR_DzylDvx6RYK2XFbR-i7Y-oVMNi-IJn8fK5UKQVt4wwfybi3hzBmHZybh98z1qFq3ebvlTL_Lf3mk4hAlHw631FzvBVolpM_qHjST6Wwx346ilaO2lTl7qlGbCLTWWtxuJb4MovjQfyx6TMNBTrKo6W4o-BJMAf_QyzKWas-UlTGyoK-H5ZRxzli0hChQKN2V362Ai5HZh2SL04mk79pvw0wurB5xGc-HfWilLIWzf120p2gI-IxrZeNQTGigEzyNoT4GH8P3qOyeuvP3HdeKMFmBsDW-luzb8",
+        "siteName": "",
+        "site": null,
+        "ctcAdminFlow": false
+      },
+      "useNewDocumentApi": true,
+      "integratorProductReference": "1534436209752-4-3",
+      "webAnalyticsOptions": {
+        "disableContentSquare": "true",
+        "disableAdobeAnalytics": "false",
+        "disableAppDynamics": "false",
+        "disableForsta": "false"
+      }
+    },
+    "codeChallenge": "f1a80c3e4e8bc1323225103ba46baa051ef85d8e6b956891f6273d49b48d1fbb"
+  }
+}

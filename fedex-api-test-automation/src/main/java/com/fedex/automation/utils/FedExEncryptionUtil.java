@@ -55,7 +55,7 @@ public final class FedExEncryptionUtil {
             String rawBase64 = Base64.getEncoder().encodeToString(encryptedBytes);
 
             // 5. URL Encode (Prevents '+' corruption during transmission)
-            return URLEncoder.encode(rawBase64, StandardCharsets.UTF_8.toString());
+            return URLEncoder.encode(rawBase64, StandardCharsets.UTF_8);
 
         } catch (Exception e) {
             throw new RuntimeException("Failed to encrypt credit card data", e);

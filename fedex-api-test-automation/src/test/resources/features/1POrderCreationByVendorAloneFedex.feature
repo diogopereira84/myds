@@ -1,23 +1,42 @@
 Feature: FedEx Office 1P Product Checkout Flow
 
-  Scenario: 1P Order Creation with Custom PDF Document
+  @1P @E2E @Configurator
+  Scenario: 1P E2E Order Creation with Copies & Custom Documents
     Given I initialize the FedEx session
-    # New specific steps for the Document flow
+    When I search for the 1P product "Copies & Custom Documents"
+    And I request an internal rate quote using the default template
+    And I fetch the Menu Hierarchy to resolve the Product ID
+    And I fetch the dynamic product details for the selected product
+    And I initiate a 1P Configurator Session for the current product
+    And I verify the Configurator Session was successfully created
+    And I perform a Configurator Session Search
     And I upload the document "SimpleText.pdf" to the FedEx repository
-    And I configure the 1P document product "Multi Sheet" with the following features:
+    And I create the Configurator State and apply the following features:
       | Paper Size  | 8.5x11       |
       | Print Color | Full Color   |
       | Sides       | Single-Sided |
-    When I add the configured document product to the cart
-
+    And I verify the Configurator State was successfully created
+    And I add 1 configured document product(s) to the cart
+    And I verify the configured product was added to the Magento cart
+    And I verify the product is visible in the cart via section load
+    And I scrape the cart context data
+    And I estimate shipping methods and select "GROUND_US"
+    And I retrieve the delivery rate
+    And I create a quote
+    And I validate the pay rate API
+    When I submit the order using a secure credit card
+    Then the order should be placed successfully with a generated Order Number
 
   Scenario: 1P Order Creation by Vendor Alone FedEx Single Item
     Given I initialize the FedEx session
-    And I search and add the following products to the cart:
-      | productName | quantity | sellerModel |
-      | Flyers      | 50       | 1P          |
+    When I search for the following products:
+      | productName | sellerModel |
+      | Flyers      | 1P          |
+    And I add the following products to the cart:
+      | productName | quantity |
+      | Flyers      | 50       |
     And I scrape the cart context data
-#   And I check the cart html
+    And I check the cart html
     And I estimate shipping methods and select "GROUND_US"
     And I retrieve the delivery rate
     And I create a quote
@@ -51,3 +70,23 @@ Feature: FedEx Office 1P Product Checkout Flow
       | orderTotal    | $43.20                |
       | currency      | USD                   |
 
+  # Variation 2: Multi-Item with Mixed Quantities
+  Scenario: 1P Order Creation by Vendor Alone Fedex Multi-Item Order with Mixed Quantities
+    Given I initialize the FedEx session
+    When I search for the following products:
+      | productName               | sellerModel |
+      | Flyers                    | 1P          |
+      | Copies & Custom Documents | 1P          |
+
+    And I add the following products to the cart:
+      | productName                    | quantity |
+      | Flyers                         | 50       |
+      | Copies & Custom Documents      | 1        |
+    And I scrape the cart context data
+    And I check the cart html
+    And I estimate shipping methods and select "GROUND_US"
+    And I retrieve the delivery rate
+    And I create a quote
+    And I validate the pay rate API
+    When I submit the order using a secure credit card
+    Then the order should be placed successfully with a generated Order Number
