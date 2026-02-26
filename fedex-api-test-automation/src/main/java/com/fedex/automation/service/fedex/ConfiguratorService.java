@@ -1,9 +1,11 @@
 package com.fedex.automation.service.fedex;
 
+import com.fedex.automation.constants.FedExConstants;
 import io.restassured.http.ContentType;
 import io.restassured.response.Response;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -17,7 +19,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 public class ConfiguratorService {
 
     private final SessionService sessionService;
-    private static final String CART_PRODUCT_ADD_ENDPOINT = "/default/cart/product/add";
+
+    @Value("${endpoint.cart.product.add}")
+    private String cartProductAddEndpoint;
 
     public void add1PConfiguredItemToCart(String sku, String partnerProductId, int quantity) {
         String configuratorStateId = UUID.randomUUID().toString();
@@ -99,13 +103,13 @@ public class ConfiguratorService {
                 .header("Adrum", "isAjax:true")
                 .header("Origin", "https://staging2.office.fedex.com")
                 .header("Referer", "https://staging2.office.fedex.com/default/configurator/index/index/responseid/" + configuratorStateId)
-                .header("X-Requested-With", "XMLHttpRequest")
+                .header(FedExConstants.HEADER_X_REQUESTED_WITH, FedExConstants.VALUE_XMLHTTPREQUEST)
                 .header("Sec-Fetch-Dest", "empty")
                 .header("Sec-Fetch-Mode", "cors")
                 .header("Sec-Fetch-Site", "same-origin")
                 .formParam("data", jsonPayload)
                 .formParam("itemId", "")
-                .post(CART_PRODUCT_ADD_ENDPOINT);
+                .post(cartProductAddEndpoint);
 
         if (response.statusCode() != 200) {
             log.error("Failed to add 1P item. Status: {}, Body: {}", response.statusCode(), response.body().asString());

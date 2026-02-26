@@ -1,5 +1,6 @@
 package com.fedex.automation.service.fedex;
 
+import com.fedex.automation.constants.FedExConstants;
 import com.fedex.automation.context.TestContext;
 import io.restassured.http.ContentType;
 import io.restassured.response.Response;
@@ -7,7 +8,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+
 import java.io.File;
+
 import static org.hamcrest.Matchers.lessThan;
 
 @Slf4j
@@ -24,14 +27,15 @@ public class DocumentService {
     @Value("${endpoint.document.printready}")
     private String printReadyEndpoint;
 
-    private static final String API_GATEWAY_CLIENT_ID = "l735d628c13a154cc2abab4ecc50fe0558";
+    @Value("${fedex.api.gateway.client-id}")
+    private String apiGatewayClientId;
 
     public void uploadDocument(File pdfFile) {
         log.info("Executing Multipart Upload Document: {}", pdfFile.getName());
 
         Response response = sessionService.authenticatedRequest()
-                .header("client_id", API_GATEWAY_CLIENT_ID)
-                .queryParam("ClientName", "POD2.0")
+                .header(FedExConstants.HEADER_CLIENT_ID, apiGatewayClientId)
+                .queryParam(FedExConstants.PARAM_CLIENT_NAME, FedExConstants.INTEGRATOR_ID_POD2)
                 .multiPart("document", pdfFile)
                 .multiPart("documentName", pdfFile.getName())
                 .multiPart("documentType", "PDF")
@@ -44,18 +48,15 @@ public class DocumentService {
 
         String originalDocId = response.jsonPath().getString("output.document.documentId");
         testContext.setOriginalDocId(originalDocId);
-        log.info("Document Uploaded. Original ID: {}", originalDocId);
     }
 
     public void convertToPrintReady() {
         String originalDocId = testContext.getOriginalDocId();
-        log.info("Converting document [{}] to Print Ready...", originalDocId);
-
         String payload = String.format("{\"printReadyRequest\":{\"documentId\":\"%s\",\"conversionOptions\":{\"lockContentOrientation\":false,\"minDPI\":200,\"defaultImageWidthInInches\":\"8.5\",\"defaultImageHeightInInches\":\"11\"},\"normalizationOptions\":{\"lockContentOrientation\":false,\"marginWidthInInches\":\"0\",\"targetWidthInInches\":\"\",\"targetHeightInInches\":\"\",\"targetOrientation\":\"UNKNOWN\"},\"previewURL\":true,\"expiration\":{\"units\":\"HOURS\",\"value\":24}}}", originalDocId);
 
         Response response = sessionService.authenticatedRequest()
-                .header("client_id", API_GATEWAY_CLIENT_ID)
-                .queryParam("ClientName", "POD2.0")
+                .header(FedExConstants.HEADER_CLIENT_ID, apiGatewayClientId)
+                .queryParam(FedExConstants.PARAM_CLIENT_NAME, FedExConstants.INTEGRATOR_ID_POD2)
                 .contentType(ContentType.JSON)
                 .body(payload)
                 .post(printReadyEndpoint);
@@ -64,6 +65,5 @@ public class DocumentService {
 
         String printReadyDocId = response.jsonPath().getString("output.document.documentId");
         testContext.setPrintReadyDocId(printReadyDocId);
-        log.info("Document Processed to Print Ready. New ID: {}", printReadyDocId);
     }
 }

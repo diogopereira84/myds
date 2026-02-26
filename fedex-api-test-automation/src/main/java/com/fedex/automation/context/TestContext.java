@@ -13,6 +13,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 @Data
 @Component
@@ -30,13 +31,17 @@ public class TestContext {
     private JsonNode checkoutDetails;
     private JsonNode unifiedDataLayer;
 
+    // --- Dynamic BDD Data ---
+    private Map<String, String> shippingAddress;
+    private Map<String, String> paymentDetails;
+
     // --- 1P Flow Tracking (The 6 Steps) ---
-    private String sessionId; // Step 1
-    private String originalDocId; // Step 3
-    private String printReadyDocId; // Step 3
-    private String configuratorStateId; // Step 2
-    private String configuratorPayload; // Stored for Step 6
-    private ObjectNode currentConfiguredProductNode; // Stored for Steps 4 & 5 (Rates)
+    private String sessionId;
+    private String originalDocId;
+    private String printReadyDocId;
+    private String configuratorStateId;
+    private String configuratorPayload;
+    private ObjectNode currentConfiguredProductNode;
 
     // Dynamic 1P Flow
     private String currentProductId;

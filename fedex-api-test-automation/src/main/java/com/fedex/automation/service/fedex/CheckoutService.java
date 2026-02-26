@@ -2,6 +2,7 @@ package com.fedex.automation.service.fedex;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fedex.automation.constants.FedExConstants;
 import com.fedex.automation.model.fedex.*;
 import io.restassured.http.ContentType;
 import io.restassured.response.Response;
@@ -13,7 +14,6 @@ import org.springframework.stereotype.Service;
 import java.util.Map;
 import java.util.Objects;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.fail;
 
 @Slf4j
@@ -23,9 +23,6 @@ public class CheckoutService {
 
     private final SessionService sessionService;
     private final ObjectMapper objectMapper;
-
-    @Value("${base.url}")
-    private String baseUrl;
 
     @Value("${endpoint.shipping.estimate}")
     private String estimateEndpoint;
@@ -42,15 +39,16 @@ public class CheckoutService {
     @Value("${endpoint.order.submit}")
     private String submitOrderEndpoint;
 
-    public EstimateShipMethodResponse[] estimateShipping(String maskedQuoteId, EstimateShippingRequest request) {
-        Objects.requireNonNull(maskedQuoteId, "Masked Quote ID cannot be null. Check 'Scrape Cart' step.");
-        log.info("Estimating Shipping Methods for Quote: {}", maskedQuoteId);
+    @Value("${endpoint.delivery.encryptionkey}")
+    private String encryptionKeyEndpoint;
 
+    public EstimateShipMethodResponse[] estimateShipping(String maskedQuoteId, EstimateShippingRequest request) {
+        Objects.requireNonNull(maskedQuoteId, "Masked Quote ID cannot be null.");
         String url = estimateEndpoint.replace("{cartId}", maskedQuoteId);
-        return sessionService.authenticatedRequest()
+
+        return sessionService.checkoutRequest()
                 .contentType(ContentType.JSON)
-                .header("X-Requested-With", "XMLHttpRequest")
-                .header("Referer", baseUrl + "/default/checkout")
+                .header(FedExConstants.HEADER_X_REQUESTED_WITH, FedExConstants.VALUE_XMLHTTPREQUEST)
                 .body(request)
                 .post(url)
                 .then()
@@ -59,16 +57,9 @@ public class CheckoutService {
     }
 
     public JsonNode getDeliveryRate(DeliveryRateRequestForm form) {
-        // FIX: safely access carrier code from nested object for logging
-        String carrier = (form.getShipMethodData() != null) ? form.getShipMethodData().getCarrierCode() : "Unknown";
-        String method = (form.getShipMethodData() != null) ? form.getShipMethodData().getMethodCode() : "Unknown";
-
-        log.info("Retrieving Delivery Rate for Carrier: {}, Method: {}", carrier, method);
-
-        Response response = sessionService.authenticatedRequest()
+        Response response = sessionService.checkoutRequest()
                 .contentType("application/x-www-form-urlencoded; charset=UTF-8")
-                .header("X-Requested-With", "XMLHttpRequest")
-                .header("Referer", baseUrl + "/default/checkout")
+                .header(FedExConstants.HEADER_X_REQUESTED_WITH, FedExConstants.VALUE_XMLHTTPREQUEST)
                 .formParam("firstname", form.getFirstname())
                 .formParam("lastname", form.getLastname())
                 .formParam("email", form.getEmail())
@@ -96,20 +87,16 @@ public class CheckoutService {
         }
     }
 
-    // FIX: Method signature now accepts CreateQuotePayload object
     public void createQuote(CreateQuotePayload quotePayload) {
-        log.info("Creating Pricing Quote...");
         try {
-            Response response = sessionService.authenticatedRequest()
+            Response response = sessionService.checkoutRequest()
                     .contentType("application/x-www-form-urlencoded; charset=UTF-8")
-                    .header("X-Requested-With", "XMLHttpRequest")
-                    .header("Referer", baseUrl + "/default/checkout")
+                    .header(FedExConstants.HEADER_X_REQUESTED_WITH, FedExConstants.VALUE_XMLHTTPREQUEST)
                     .formParam("data", objectMapper.writeValueAsString(quotePayload))
                     .post(createQuoteEndpoint);
 
-            String body = response.asString();
-            if (response.statusCode() != 200 || body.toLowerCase().contains("exception")) {
-                fail("Create Quote Failed. Status: " + response.statusCode() + ", Body: " + body);
+            if (response.statusCode() != 200 || response.asString().toLowerCase().contains("exception")) {
+                fail("Create Quote Failed. Status: " + response.statusCode());
             }
         } catch (Exception e) {
             throw new RuntimeException("Error creating quote", e);
@@ -117,10 +104,9 @@ public class CheckoutService {
     }
 
     public void callPayRate() {
-        sessionService.authenticatedRequest()
+        sessionService.checkoutRequest()
                 .contentType("application/x-www-form-urlencoded; charset=UTF-8")
-                .header("X-Requested-With", "XMLHttpRequest")
-                .header("Referer", baseUrl + "/default/checkout")
+                .header(FedExConstants.HEADER_X_REQUESTED_WITH, FedExConstants.VALUE_XMLHTTPREQUEST)
                 .formParam("fedexAccount", "")
                 .formParam("shippingAccount", "")
                 .formParam("selectedProductionId", "")
@@ -130,20 +116,15 @@ public class CheckoutService {
     }
 
     public String submitOrder(SubmitOrderRequest request, String quoteId) {
-        log.info("Submitting Order for QuoteID: {}", quoteId);
         try {
-            String jsonData = objectMapper.writeValueAsString(request);
-
-            // Pass quoteId safely into our single Cookie Header builder
             Map<String, String> checkoutCookies = new java.util.HashMap<>();
             checkoutCookies.put("quoteId", quoteId);
 
-            Response response = sessionService.authenticatedRequest(checkoutCookies)
+            Response response = sessionService.checkoutRequest(checkoutCookies)
                     .contentType("application/x-www-form-urlencoded; charset=UTF-8")
-                    .header("X-Requested-With", "XMLHttpRequest")
-                    .header("Referer", baseUrl + "/default/checkout")
+                    .header(FedExConstants.HEADER_X_REQUESTED_WITH, FedExConstants.VALUE_XMLHTTPREQUEST)
                     .queryParam("pickstore", "0")
-                    .formParam("data", jsonData)
+                    .formParam("data", objectMapper.writeValueAsString(request))
                     .post(submitOrderEndpoint);
 
             return response.asString();
@@ -153,9 +134,9 @@ public class CheckoutService {
     }
 
     public String fetchEncryptionKey() {
-        return sessionService.authenticatedRequest()
-                .header("X-Requested-With", "XMLHttpRequest")
-                .get("/default/delivery/index/encryptionkey")
+        return sessionService.checkoutRequest()
+                .header(FedExConstants.HEADER_X_REQUESTED_WITH, FedExConstants.VALUE_XMLHTTPREQUEST)
+                .get(encryptionKeyEndpoint)
                 .jsonPath().getString("encryption.key");
     }
 

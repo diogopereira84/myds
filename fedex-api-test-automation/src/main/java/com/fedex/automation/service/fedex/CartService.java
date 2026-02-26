@@ -1,13 +1,14 @@
-// src/main/java/com/fedex/automation/service/fedex/CartService.java
 package com.fedex.automation.service.fedex;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fedex.automation.constants.FedExConstants;
 import com.fedex.automation.model.fedex.CartContext;
 import io.restassured.http.ContentType;
 import io.restassured.response.Response;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.HashMap;
@@ -27,18 +28,23 @@ public class CartService {
     private final ObjectMapper objectMapper;
     private String cachedMaskedCartId;
 
-    // FIX: Hardcoded to guarantee 3P Add To Cart hits the Marketplace endpoint, preventing the 503 crash.
-    private static final String CART_ADD_ENDPOINT_3P = "/default/marketplaceproduct/addtocart/index/";
+    @Value("${endpoint.cart.get}")
+    private String cartGetEndpoint;
+
+    @Value("${endpoint.cart.add.3p}")
+    private String cartAdd3PEndpoint;
+
+    @Value("${endpoint.customer.section.load}")
+    private String customerSectionLoadEndpoint;
+
 
     public void checkCart() {
         log.info("Checking Cart Totals");
 
-        String endpoint = "/default/checkout/cart/";
-
         Response response = sessionService.authenticatedRequest()
                 .contentType(ContentType.JSON)
                 .header("accept", "*/*")
-                .get(endpoint);
+                .get(cartGetEndpoint);
 
         log.info("Cart Totals Response Code: {}", response.statusCode());
         assertEquals(200, response.statusCode(), "Expected 200 OK from Cart Totals Information");
@@ -57,9 +63,9 @@ public class CartService {
 
         Response response = sessionService.authenticatedRequest()
                 .contentType(ContentType.URLENC)
-                .header("X-Requested-With", "XMLHttpRequest")
+                .header(FedExConstants.HEADER_X_REQUESTED_WITH, FedExConstants.VALUE_XMLHTTPREQUEST)
                 .formParams(params)
-                .post(CART_ADD_ENDPOINT_3P); // Enforcing exact endpoint
+                .post(cartAdd3PEndpoint);
 
         if (response.statusCode() != 302) {
             log.error("Add to Cart failed. Status: {}, Body: {}", response.statusCode(), response.body().asString());
@@ -71,7 +77,7 @@ public class CartService {
     public CartContext scrapeCartContext(String targetSku) {
         log.info("Scraping Cart Context, looking for SKU: {}", targetSku);
 
-        Response response = sessionService.authenticatedRequest().get("/default/checkout/cart/");
+        Response response = sessionService.authenticatedRequest().get(cartGetEndpoint);
         String html = response.asString();
         String jsonString = extractJsonConfig(html);
 
@@ -122,7 +128,7 @@ public class CartService {
     private String getOrFetchMaskedCartId() {
         if (cachedMaskedCartId != null) return cachedMaskedCartId;
 
-        Response response = sessionService.authenticatedRequest().get("/default/checkout/cart/");
+        Response response = sessionService.authenticatedRequest().get(cartGetEndpoint);
         String extractedId = extractMaskedIdRegex(response.body().asString());
 
         if (extractedId != null) {
@@ -163,16 +169,15 @@ public class CartService {
         log.info("--- [Validation] Verifying Magento Cart via Section Load ---");
         long timestamp = System.currentTimeMillis();
 
-        // Emulating exact network call provided in LOAD_SECTION_UI_URL.txt
         Response response = sessionService.authenticatedRequest()
                 .baseUri(sessionService.getBaseUrl())
                 .header("Accept", "application/json, text/javascript, */*; q=0.01")
-                .header("X-Requested-With", "XMLHttpRequest")
-                .header("Referer", sessionService.getBaseUrl() + "/default/checkout/cart/")
+                .header(FedExConstants.HEADER_X_REQUESTED_WITH, FedExConstants.VALUE_XMLHTTPREQUEST)
+                .header("Referer", sessionService.getBaseUrl() + cartGetEndpoint)
                 .queryParam("sections", "cart,messages")
                 .queryParam("force_new_section_timestamp", "true")
                 .queryParam("_", String.valueOf(timestamp))
-                .get("/default/customer/section/load/");
+                .get(customerSectionLoadEndpoint);
 
         assertEquals(200, response.statusCode(), "Customer section load failed with HTTP " + response.statusCode());
 
@@ -181,7 +186,6 @@ public class CartService {
             JsonNode cartNode = rootNode.path("cart");
             assertFalse(cartNode.isMissingNode(), "Cart node missing in section load response");
 
-            // Validate items actually persisted in Magento's session!
             int summaryCount = cartNode.path("summary_count").asInt(0);
 
             if (summaryCount == 0) {
@@ -193,5 +197,18 @@ public class CartService {
         } catch (Exception e) {
             fail("Failed to parse cart section response", e);
         }
+    }
+
+    public Response loadCustomerSection() {
+        String timestamp = String.valueOf(System.currentTimeMillis());
+        log.info("--- [Action] Loading Customer Section UI Data ---");
+
+        return sessionService.checkoutRequest()
+                .header("Accept", "application/json, text/javascript, */*; q=0.01")
+                .header(FedExConstants.HEADER_X_REQUESTED_WITH, FedExConstants.VALUE_XMLHTTPREQUEST)
+                .queryParam("sections", "messages,company,cart,session,marketplace,sso_section")
+                .queryParam("force_new_section_timestamp", "true")
+                .queryParam("_", timestamp)
+                .get(customerSectionLoadEndpoint);
     }
 }

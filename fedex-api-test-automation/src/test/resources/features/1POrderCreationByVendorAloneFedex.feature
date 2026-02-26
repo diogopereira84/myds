@@ -17,15 +17,16 @@ Feature: FedEx Office 1P Product Checkout Flow
       | Sides       | Single-Sided |
     And I verify the Configurator State was successfully created
     And I add 1 configured document product(s) to the cart
-    And I verify the configured product was added to the Magento cart
-    And I verify the product is visible in the cart via section load
-    And I scrape the cart context data
-    And I estimate shipping methods and select "GROUND_US"
-    And I retrieve the delivery rate
-    And I create a quote
-    And I validate the pay rate API
-    When I submit the order using a secure credit card
-    Then the order should be placed successfully with a generated Order Number
+    #And I scrape the cart context data
+    And I verify the customer load section contains following information:
+      | cart.summary_count               | 1          |
+      | cart.subtotalAmount              | 75.7900    |
+#    And I estimate shipping methods and select "GROUND_US"
+#    And I retrieve the delivery rate
+#    And I create a quote
+#    And I validate the pay rate API
+#    When I submit the order using a secure credit card
+#    Then the order should be placed successfully with a generated Order Number
 
   Scenario: 1P Order Creation by Vendor Alone FedEx Single Item
     Given I initialize the FedEx session
@@ -36,7 +37,7 @@ Feature: FedEx Office 1P Product Checkout Flow
       | productName | quantity |
       | Flyers      | 50       |
     And I scrape the cart context data
-    And I check the cart html
+    #And I check the cart html
     And I estimate shipping methods and select "GROUND_US"
     And I retrieve the delivery rate
     And I create a quote

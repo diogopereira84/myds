@@ -31,16 +31,27 @@ public class AdminSessionService {
     @Value("${admin.password}")
     private String password;
 
+    @Value("${endpoint.admin.login}")
+    private String adminLoginEndpoint;
+
+    @Value("${endpoint.admin.orders}")
+    private String adminOrdersEndpoint;
+
+    @Value("${endpoint.admin.token}")
+    private String adminTokenEndpoint;
+
+    @Value("${endpoint.admin.order.view}")
+    private String adminOrderViewEndpoint;
+
     @Autowired
-    private RequestSpecification defaultRequestSpec; // Inject
+    private RequestSpecification defaultRequestSpec;
 
     private final CookieFilter adminCookieFilter = new CookieFilter();
     private String adminBearerToken;
 
-    // Helper to create base admin request
     public RequestSpecification adminRequest() {
         return given()
-                .spec(defaultRequestSpec) // <--- Applies cURL filter
+                .spec(defaultRequestSpec)
                 .baseUri(baseUrl)
                 .filter(adminCookieFilter);
     }
@@ -48,7 +59,7 @@ public class AdminSessionService {
     public void bootstrapAdminSession() {
         log.info("--- [Admin] Bootstrapping Admin Session ---");
 
-        String loginUrl = baseUrl + adminPath + "/admin/auth/login/";
+        String loginUrl = baseUrl + adminPath + adminLoginEndpoint;
         Response pageResp = adminRequest().get(loginUrl);
         String formKey = extractFormKey(pageResp.asString());
 
@@ -72,12 +83,12 @@ public class AdminSessionService {
         log.info("Resolving Entity ID for Order #{}", incrementId);
 
         Response response = given()
-                .spec(defaultRequestSpec) // <--- Applies cURL filter
+                .spec(defaultRequestSpec)
                 .baseUri(baseUrl)
                 .header("Authorization", "Bearer " + adminBearerToken)
                 .queryParam("searchCriteria[filter_groups][0][filters][0][field]", "increment_id")
                 .queryParam("searchCriteria[filter_groups][0][filters][0][value]", incrementId)
-                .get("/rest/V1/orders");
+                .get(adminOrdersEndpoint);
 
         int totalCount = response.jsonPath().getInt("total_count");
         if (totalCount == 0) {
@@ -91,11 +102,11 @@ public class AdminSessionService {
 
     private void getAdminBearerToken() {
         Response response = given()
-                .spec(defaultRequestSpec) // <--- Applies cURL filter
+                .spec(defaultRequestSpec)
                 .baseUri(baseUrl)
                 .contentType(ContentType.JSON)
                 .body("{\"username\": \"" + username + "\", \"password\": \"" + password + "\"}")
-                .post("/rest/V1/integration/admin/token");
+                .post(adminTokenEndpoint);
 
         if (response.statusCode() != 200) {
             throw new RuntimeException("Failed to get Admin Token: " + response.asString());
@@ -104,7 +115,7 @@ public class AdminSessionService {
     }
 
     public String scrapeSendToMiraklUrl(String orderEntityId) {
-        String url = baseUrl + adminPath + "/sales/order/view/order_id/" + orderEntityId;
+        String url = baseUrl + adminPath + adminOrderViewEndpoint + orderEntityId;
         log.info("Accessing Order Page: {}", url);
 
         Response response = adminRequest().get(url);
