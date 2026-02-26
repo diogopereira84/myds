@@ -271,9 +271,25 @@ public class CommonCheckoutSteps {
         JsonNode lineItemContainer = getFirstLineItemContainer();
         JsonNode productTotals = lineItemContainer.path("deliveryLines").get(0).path("productTotals");
         Map<String, String> expected = dataTable.asMap(String.class, String.class);
-        if (expected.containsKey("taxableAmount")) assertEquals(expected.get("taxableAmount"), productTotals.path("productTaxableAmount").asText());
-        if (expected.containsKey("taxAmount")) assertEquals(expected.get("taxAmount"), productTotals.path("productTaxAmount").asText());
-        if (expected.containsKey("totalAmount")) assertEquals(expected.get("totalAmount"), productTotals.path("productTotalAmount").asText());
+
+        // Debug context to immediately show what the API returned upon failure
+        String debugContext = "\nActual JSON returned by API: " + productTotals.toPrettyString();
+
+        if (expected.containsKey("taxableAmount")) {
+            assertEquals(Double.parseDouble(expected.get("taxableAmount")),
+                    productTotals.path("productTaxableAmount").asDouble(),
+                    "Mismatch in field: taxableAmount" + debugContext);
+        }
+        if (expected.containsKey("taxAmount")) {
+            assertEquals(Double.parseDouble(expected.get("taxAmount")),
+                    productTotals.path("productTaxAmount").asDouble(),
+                    "Mismatch in field: taxAmount" + debugContext);
+        }
+        if (expected.containsKey("totalAmount")) {
+            assertEquals(Double.parseDouble(expected.get("totalAmount")),
+                    productTotals.path("productTotalAmount").asDouble(),
+                    "Mismatch in field: totalAmount" + debugContext);
+        }
     }
 
     @And("I verify the product line items:")
@@ -318,10 +334,30 @@ public class CommonCheckoutSteps {
         verifyCheckoutDetailsExist();
         JsonNode transactionTotals = testContext.getCheckoutDetails().path("transactionTotals");
         Map<String, String> expected = dataTable.asMap(String.class, String.class);
-        if (expected.containsKey("grossAmount")) assertEquals(expected.get("grossAmount"), transactionTotals.path("grossAmount").asText());
-        if (expected.containsKey("netAmount")) assertEquals(expected.get("netAmount"), transactionTotals.path("netAmount").asText());
-        if (expected.containsKey("taxAmount")) assertEquals(expected.get("taxAmount"), transactionTotals.path("taxAmount").asText());
-        if (expected.containsKey("totalAmount")) assertEquals(expected.get("totalAmount"), transactionTotals.path("totalAmount").asText());
+
+        // Debug context to immediately show what the API returned upon failure
+        String debugContext = "\nActual JSON returned by API: " + transactionTotals.toPrettyString();
+
+        if (expected.containsKey("grossAmount")) {
+            assertEquals(Double.parseDouble(expected.get("grossAmount")),
+                    transactionTotals.path("grossAmount").asDouble(),
+                    "Mismatch in field: grossAmount" + debugContext);
+        }
+        if (expected.containsKey("netAmount")) {
+            assertEquals(Double.parseDouble(expected.get("netAmount")),
+                    transactionTotals.path("netAmount").asDouble(),
+                    "Mismatch in field: netAmount" + debugContext);
+        }
+        if (expected.containsKey("taxAmount")) {
+            assertEquals(Double.parseDouble(expected.get("taxAmount")),
+                    transactionTotals.path("taxAmount").asDouble(),
+                    "Mismatch in field: taxAmount" + debugContext);
+        }
+        if (expected.containsKey("totalAmount")) {
+            assertEquals(Double.parseDouble(expected.get("totalAmount")),
+                    transactionTotals.path("totalAmount").asDouble(),
+                    "Mismatch in field: totalAmount" + debugContext);
+        }
     }
 
     @And("I trigger the order export to Mirakl")

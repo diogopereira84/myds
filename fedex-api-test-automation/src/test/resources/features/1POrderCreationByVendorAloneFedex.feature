@@ -1,7 +1,6 @@
 Feature: FedEx Office 1P Product Checkout Flow
 
-  @1P @E2E @Configurator
-  Scenario: 1P E2E Order Creation with Copies & Custom Documents
+  Scenario Outline: 1P E2E Order Creation with Copies & Custom Documents
     Given I initialize the FedEx session
     When I search for the 1P product "Copies & Custom Documents"
     And I request an internal rate quote using the default template
@@ -12,21 +11,46 @@ Feature: FedEx Office 1P Product Checkout Flow
     And I perform a Configurator Session Search
     And I upload the document "SimpleText.pdf" to the FedEx repository
     And I create the Configurator State and apply the following features:
-      | Paper Size  | 8.5x11       |
-      | Print Color | Full Color   |
-      | Sides       | Single-Sided |
+      | Print Color   | Black & White  |
+      | Paper Size    | 11x17          |
+      | Paper Type    | Laser (32 lb.) |
+      | Sides         | Single-Sided   |
+      | Hole Punching | None           |
     And I verify the Configurator State was successfully created
     And I add 1 configured document product(s) to the cart
-    #And I scrape the cart context data
+    And I scrape the cart context data
     And I verify the customer load section contains following information:
       | cart.summary_count               | 1          |
-      | cart.subtotalAmount              | 75.7900    |
-#    And I estimate shipping methods and select "GROUND_US"
-#    And I retrieve the delivery rate
-#    And I create a quote
-#    And I validate the pay rate API
-#    When I submit the order using a secure credit card
-#    Then the order should be placed successfully with a generated Order Number
+      | cart.subtotalAmount              | 0.7100     |
+    And I provide the shipping address:
+      | firstName   | lastName    | street              | city        | regionId   | regionCode | countryId | postcode   | telephone   | email   |
+      | <firstName> | <lastName>  | 550 PEACHTREE ST NE | Los Angeles | 34         | CA         | US        | 90002      | 4247021234  | <email> |
+    And I estimate shipping methods and select "LOCAL_DELIVERY_PM"
+    And I retrieve the delivery rate
+    And I create a quote
+    And I validate the pay rate API
+    And I provide the payment details:
+      | cardNumber       | expMonth | expYear | cvv   |
+      | 4111111111111111 | 12       | 2035    | 123   |
+    When I submit the order using a secure credit card
+    Then the order should be placed successfully with a generated Order Number
+    And I verify the order contact details:
+      | firstName | <firstName> |
+      | lastName  | <lastName>  |
+      | email     | <email>     |
+    And I verify the transaction payment details:
+      | paymentType   | CREDIT_CARD      |
+      | currency      | USD              |
+      | amount        | <totalAmount>    |
+      | authResponse  | <authStatus>     |
+    And I verify the product totals and taxation:
+      | taxableAmount        | <taxableAmount>      |
+      | taxAmount            | <taxAmount>          |
+      | productTotalAmount   | <productTotalAmount> |
+    Examples:
+      | firstName | lastName | email                         | taxableAmount | taxAmount | productTotalAmount | totalAmount | authStatus |
+      | Harvey    | Hamilton | harvey.hamilton.osv@fedex.com | 0.71          | 0.07      | 0.78               | 22.93       | APPROVED   |
+
 
   Scenario: 1P Order Creation by Vendor Alone FedEx Single Item
     Given I initialize the FedEx session

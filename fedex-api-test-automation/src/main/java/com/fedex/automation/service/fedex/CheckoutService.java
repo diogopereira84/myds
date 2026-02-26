@@ -42,6 +42,12 @@ public class CheckoutService {
     @Value("${endpoint.delivery.encryptionkey}")
     private String encryptionKeyEndpoint;
 
+    @Value("${fedex.constants.header.x-requested-with}")
+    private String headerXRequestedWith;
+
+    @Value("${fedex.constants.value.xmlhttprequest}")
+    private String valueXmlHttpRequest;
+
     public EstimateShipMethodResponse[] estimateShipping(String maskedQuoteId, EstimateShippingRequest request) {
         Objects.requireNonNull(maskedQuoteId, "Masked Quote ID cannot be null.");
         String url = estimateEndpoint.replace("{cartId}", maskedQuoteId);

@@ -45,12 +45,12 @@ Feature: Essendant 3P Order Creation by Vendor Alone - Product Checkout Flow
       | amount        | <totalAmount>    |
       | authResponse  | <authStatus>     |
     And I verify the product totals and taxation:
-      | taxableAmount | <taxableAmount>  |
-      | taxAmount     | <taxAmount>      |
-      | totalAmount   | <totalAmount>    |
+      | taxableAmount        | <taxableAmount>      |
+      | taxAmount            | <taxAmount>          |
+      | productTotalAmount   | <productTotalAmount> |
     Examples:
-      | firstName | lastName | email                         | taxableAmount | taxAmount | totalAmount | authStatus |
-      | Harvey    | Hamilton | harvey.hamilton.osv@fedex.com | 75.79         | 8.15      | 83.94       | APPROVED   |
+      | firstName | lastName | email                         | taxableAmount | taxAmount | productTotalAmount | totalAmount | authStatus |
+      | Harvey    | Hamilton | harvey.hamilton.osv@fedex.com | 75.79         | 8.15      | productTotalAmount | 83.94       | APPROVED   |
 
 # Variation 2: Multi-Item with Mixed Quantities
   Scenario Outline: 3P Order Creation by Vendor Alone Essendant Multi-Item Order with Mixed Quantities
@@ -86,17 +86,17 @@ Feature: Essendant 3P Order Creation by Vendor Alone - Product Checkout Flow
       | amount       | <totalAmount> |
       | authResponse | <authStatus>  |
     And I verify the product totals and taxation:
-      | taxableAmount | <taxableAmount> |
-      | taxAmount     | <taxAmount>     |
-      | totalAmount   | <totalAmount>   |
+      | taxableAmount        | <taxableAmount>      |
+      | taxAmount            | <taxAmount>          |
+      | productTotalAmount   | <productTotalAmount> |
     # Verifies BOTH items exist in the order
     And I verify the product line items:
       | productName           | quantity   |
       | ACCO Metal Book Rings | 1          |
       | Sharpie Liquid Pen    | 2          |
     Examples:
-      | firstName | lastName  | email                          | taxableAmount | taxAmount | totalAmount | authStatus |
-      | Harvey    | Hamilton  | harvey.hamilton.osv@fedex.com  | 133.55        | 14.36     | 147.91      | APPROVED   |
+      | firstName | lastName  | email                          | taxableAmount | taxAmount | productTotalAmount | totalAmount | authStatus |
+      | Harvey    | Hamilton  | harvey.hamilton.osv@fedex.com  | 133.55        | 14.36     | 147.91             | 147.91      | APPROVED   |
 
 
     # Variation 3: Bulk Order (2 of each)
@@ -133,14 +133,14 @@ Feature: Essendant 3P Order Creation by Vendor Alone - Product Checkout Flow
       | amount       | <totalAmount> |
       | authResponse | <authStatus>  |
     And I verify the product totals and taxation:
-      | taxableAmount | <taxableAmount> |
-      | taxAmount     | <taxAmount>     |
-      | totalAmount   | <totalAmount>   |
+      | taxableAmount        | <taxableAmount>      |
+      | taxAmount            | <taxAmount>          |
+      | productTotalAmount   | <productTotalAmount> |
     # Verifies BOTH items exist in the order
     And I verify the product line items:
       | productName           | quantity   |
       | ACCO Metal Book Rings | 2          |
       | Sharpie Liquid Pen    | 2          |
     Examples:
-      | firstName | lastName  | email                          | taxableAmount | taxAmount | totalAmount | authStatus |
-      | Harvey    | Hamilton  | harvey.hamilton.osv@fedex.com  | 209.34        | 22.50     | 231.84      | APPROVED   |
+      | firstName | lastName  | email                          | taxableAmount | taxAmount | productTotalAmount | totalAmount | authStatus |
+      | Harvey    | Hamilton  | harvey.hamilton.osv@fedex.com  | 209.34        | 22.50     | 231.84             | 231.84      | APPROVED   |

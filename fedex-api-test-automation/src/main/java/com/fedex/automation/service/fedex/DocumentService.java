@@ -30,6 +30,15 @@ public class DocumentService {
     @Value("${fedex.api.gateway.client-id}")
     private String apiGatewayClientId;
 
+    @Value("${fedex.constants.header.client-id}")
+    private String headerClientId;
+
+    @Value("${fedex.constants.param.client-name}")
+    private String paramClientName;
+
+    @Value("${fedex.constants.integrator-id}")
+    private String integratorIdPod2;
+
     public void uploadDocument(File pdfFile) {
         log.info("Executing Multipart Upload Document: {}", pdfFile.getName());
 

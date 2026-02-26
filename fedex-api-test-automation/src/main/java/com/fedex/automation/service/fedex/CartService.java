@@ -37,6 +37,12 @@ public class CartService {
     @Value("${endpoint.customer.section.load}")
     private String customerSectionLoadEndpoint;
 
+    @Value("${fedex.constants.header.x-requested-with}")
+    private String headerXRequestedWith;
+
+    @Value("${fedex.constants.value.xmlhttprequest}")
+    private String valueXmlHttpRequest;
+
 
     public void checkCart() {
         log.info("Checking Cart Totals");

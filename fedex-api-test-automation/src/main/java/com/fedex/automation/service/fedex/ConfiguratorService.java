@@ -23,6 +23,12 @@ public class ConfiguratorService {
     @Value("${endpoint.cart.product.add}")
     private String cartProductAddEndpoint;
 
+    @Value("${fedex.constants.header.x-requested-with}")
+    private String headerXRequestedWith;
+
+    @Value("${fedex.constants.value.xmlhttprequest}")
+    private String valueXmlHttpRequest;
+
     public void add1PConfiguredItemToCart(String sku, String partnerProductId, int quantity) {
         String configuratorStateId = UUID.randomUUID().toString();
         String configuratorSessionId = UUID.randomUUID().toString();

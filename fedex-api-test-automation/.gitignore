@@ -43,3 +43,8 @@ build/
 
 # Virtual machine crash logs
 hs_err_pid*
+
+# Allure Reports and Binaries
+allure-results/
+allure-report/
+.allure/

@@ -1,3 +1,4 @@
+// src/main/java/com/fedex/automation/utils/TestDataFactory.java
 package com.fedex.automation.utils;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -48,7 +49,6 @@ public class TestDataFactory {
     public static DeliveryRateRequestForm createRateForm(EstimateShipMethodResponse selectedMethod, String sellerModel, Map<String, String> addr) {
         boolean is1P = "1P".equalsIgnoreCase(sellerModel);
 
-        // --- NEW FIX: Inject the Address block into the ShipMethod payload just like the UI does ---
         EstimateShipMethodResponse.Address methodAddress = EstimateShipMethodResponse.Address.builder()
                 .countryId(addr.get("countryId"))
                 .regionId(addr.get("regionId"))
@@ -68,9 +68,7 @@ public class TestDataFactory {
                 ))
                 .build();
 
-        // Attach the newly built address to the method object so it serializes into ship_method_data
         selectedMethod.setAddress(methodAddress);
-        // ------------------------------------------------------------------------------------------
 
         return DeliveryRateRequestForm.builder()
                 .firstname(addr.get("firstName"))

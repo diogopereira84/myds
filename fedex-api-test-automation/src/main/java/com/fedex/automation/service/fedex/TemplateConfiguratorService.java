@@ -4,8 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.fedex.automation.constants.FedExConstants;
 import com.fedex.automation.context.TestContext;
+import com.fedex.automation.model.fedex.product.StaticProductResponse.*;
 import io.restassured.http.ContentType;
 import io.restassured.response.Response;
 import lombok.RequiredArgsConstructor;
@@ -55,6 +55,22 @@ public class TemplateConfiguratorService {
     @Value("${base.url.www}")
     private String baseUrlWww;
 
+    // --- Injected Constants ---
+    @Value("${fedex.constants.integrator-id}")
+    private String integratorIdPod2;
+
+    @Value("${fedex.constants.header.client-id}")
+    private String headerClientId;
+
+    @Value("${fedex.constants.param.client-name}")
+    private String paramClientName;
+
+    @Value("${fedex.constants.header.x-requested-with}")
+    private String headerXRequestedWith;
+
+    @Value("${fedex.constants.value.xmlhttprequest}")
+    private String valueXmlHttpRequest;
+
     public void createConfiguratorSession() {
         String sku = testContext.getCurrentSku();
         String productId = testContext.getCurrentProductId();
@@ -76,10 +92,9 @@ public class TemplateConfiguratorService {
 
             testContext.setCurrentConfiguredProductNode((ObjectNode) productNode.deepCopy());
 
-            // 1. Use the new Cross-Domain Builder (staging2 origin, same-site)
             Response response = sessionService.configuratorRequest(sessionService.getBaseUrl(), sessionService.getBaseUrl() + "/")
                     .baseUri(apiGatewayUri)
-                    .header(FedExConstants.HEADER_CLIENT_ID, magentoUiClientId)
+                    .header(headerClientId, magentoUiClientId)
                     .header("x-transaction-id", transactionId)
                     .header("Accept", "*/*")
                     .contentType(ContentType.JSON)
@@ -110,7 +125,7 @@ public class TemplateConfiguratorService {
 
         Response response = sessionService.authenticatedRequest()
                 .baseUri(apiGatewayUri)
-                .header(FedExConstants.HEADER_CLIENT_ID, apiGatewayClientId)
+                .header(headerClientId, apiGatewayClientId)
                 .contentType(ContentType.JSON)
                 .body(payload.toString())
                 .post(configSearchEndpoint);
@@ -125,25 +140,15 @@ public class TemplateConfiguratorService {
         try {
             ObjectNode payloadNode = (ObjectNode) objectMapper.readTree(fullPayload);
 
-            payloadNode.remove("configuratorStateId");
-            payloadNode.remove("expirationDateTime");
-            payloadNode.remove("isEditable");
+            // FIX: Removed the .remove() calls so state data persists to cart like the UI
             payloadNode.putArray("errors");
 
             JsonNode productNode = payloadNode.path("product");
             if (productNode.isObject()) {
                 ObjectNode pNode = (ObjectNode) productNode;
-                pNode.put("qty", String.valueOf(quantity));
-                if (pNode.has("id")) pNode.put("id", pNode.get("id").asText());
+                // FIX: Pass qty as int, not String
+                pNode.put("qty", quantity);
                 pNode.put("userProductName", "SimpleText");
-
-                JsonNode contentAssoc = pNode.path("contentAssociations");
-                if (contentAssoc.isArray() && contentAssoc.size() > 0) {
-                    JsonNode assocNode = contentAssoc.get(0);
-                    if (assocNode.has("contentReqId")) {
-                        ((ObjectNode) assocNode).put("contentReqId", assocNode.get("contentReqId").asText());
-                    }
-                }
             }
 
             String urlEncodedData = URLEncoder.encode(payloadNode.toString(), StandardCharsets.UTF_8.toString());
@@ -156,7 +161,7 @@ public class TemplateConfiguratorService {
                     .header("Accept", "application/json, text/javascript, */*; q=0.01")
                     .header("Adrum", "isAjax:true")
                     .header("Referer", refererUrl)
-                    .header(FedExConstants.HEADER_X_REQUESTED_WITH, FedExConstants.VALUE_XMLHTTPREQUEST)
+                    .header(headerXRequestedWith, valueXmlHttpRequest)
                     .body(rawBody)
                     .post(cartProductAddEndpoint);
 
@@ -188,16 +193,16 @@ public class TemplateConfiguratorService {
         productNode.put("minDPI", "150.0");
         productNode.put("proofRequired", false);
 
-        applyDynamicFeatures((ArrayNode) productNode.get("features"), bddFeatures);
+        // Apply decoupled dynamic BDD features
+        applyDynamicFeatures((ArrayNode) productNode.get("features"), bddFeatures, testContext.getStaticProductDetails());
         linkDocumentsToStateProductNode(productNode, configParams);
 
         configParams.set("product", productNode);
 
-        // 2. Use the new Cross-Domain Builder (wwwtest origin, same-site)
         Response response = sessionService.configuratorRequest(baseUrlWww, baseUrlWww + "/fxo-client-modules/redirect/print-products/configure")
                 .baseUri(apiGatewayUri)
-                .header(FedExConstants.HEADER_CLIENT_ID, apiGatewayClientId)
-                .queryParam(FedExConstants.PARAM_CLIENT_NAME, FedExConstants.INTEGRATOR_ID_POD2)
+                .header(headerClientId, apiGatewayClientId)
+                .queryParam(paramClientName, integratorIdPod2)
                 .header("Accept", "application/json, text/plain, */*")
                 .contentType(ContentType.JSON)
                 .body(payload.toString())
@@ -222,7 +227,6 @@ public class TemplateConfiguratorService {
         String printReadyDocId = testContext.getPrintReadyDocId();
 
         if (originalDocId != null && printReadyDocId != null) {
-            // Document Associations
             ArrayNode contentAssoc = productNode.putArray("contentAssociations");
 
             ObjectNode docAssoc = objectMapper.createObjectNode();
@@ -237,12 +241,12 @@ public class TemplateConfiguratorService {
 
             ArrayNode pageGroups = docAssoc.putArray("pageGroups");
             ObjectNode pg = objectMapper.createObjectNode();
-            pg.put("start", 1).put("end", 1).put("width", 8.5).put("height", 11.0).put("orientation", "PORTRAIT");
+            // FIX: Height changed to integer 11 to match UI parsing
+            pg.put("start", 1).put("end", 1).put("width", 8.5).put("height", 11).put("orientation", "PORTRAIT");
             pageGroups.add(pg);
 
             contentAssoc.add(docAssoc);
 
-            // User Workspace Files
             ObjectNode userWorkspace = configParams.putObject("userWorkspace");
             ArrayNode files = userWorkspace.putArray("files");
 
@@ -257,13 +261,46 @@ public class TemplateConfiguratorService {
         }
     }
 
-    private void applyDynamicFeatures(ArrayNode featuresArray, Map<String, String> bddFeatures) {
-        if (bddFeatures == null || bddFeatures.isEmpty() || featuresArray == null || featuresArray.isMissingNode()) return;
+    private void applyDynamicFeatures(ArrayNode payloadFeaturesArray, Map<String, String> bddFeatures, StaticProduct staticProductDetails) {
+        if (bddFeatures == null || bddFeatures.isEmpty() || payloadFeaturesArray == null || staticProductDetails == null) return;
 
-        for (JsonNode featureNode : featuresArray) {
-            String featureName = featureNode.get("name").asText();
+        for (JsonNode payloadFeatureNode : payloadFeaturesArray) {
+            String featureName = payloadFeatureNode.path("name").asText();
+
             if (bddFeatures.containsKey(featureName)) {
-                ((ObjectNode) featureNode.get("choice")).put("name", bddFeatures.get(featureName));
+                String desiredChoiceName = bddFeatures.get(featureName);
+
+                ProductFeature staticFeature = staticProductDetails.getFeatures().stream()
+                        .filter(f -> f.getName().equalsIgnoreCase(featureName))
+                        .findFirst()
+                        .orElse(null);
+
+                if (staticFeature != null) {
+                    ProductChoice staticChoice = staticFeature.getChoices().stream()
+                            .filter(c -> c.getName().equalsIgnoreCase(desiredChoiceName))
+                            .findFirst()
+                            .orElseThrow(() -> new IllegalArgumentException(
+                                    String.format("Invalid BDD Choice: '%s' is not a valid option for feature '%s'", desiredChoiceName, featureName)
+                            ));
+
+                    ObjectNode choiceNode = (ObjectNode) payloadFeatureNode.get("choice");
+                    choiceNode.put("id", staticChoice.getId());
+                    choiceNode.put("name", staticChoice.getName());
+
+                    ArrayNode propertiesArray = choiceNode.putArray("properties");
+                    if (staticChoice.getProperties() != null) {
+                        for (ProductProperty prop : staticChoice.getProperties()) {
+                            ObjectNode propNode = objectMapper.createObjectNode();
+                            propNode.put("id", prop.getId());
+                            propNode.put("name", prop.getName());
+                            if (prop.getValue() != null) {
+                                propNode.put("value", prop.getValue());
+                            }
+                            propertiesArray.add(propNode);
+                        }
+                    }
+                    log.info("Successfully applied dynamic feature: {} -> {} (ID: {})", featureName, desiredChoiceName, staticChoice.getId());
+                }
             }
         }
     }
