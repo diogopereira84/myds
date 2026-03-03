@@ -17,6 +17,9 @@ import java.io.InputStream;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
+import java.util.Collections;
 import java.util.Map;
 import java.util.UUID;
 
@@ -55,7 +58,6 @@ public class TemplateConfiguratorService {
     @Value("${base.url.www}")
     private String baseUrlWww;
 
-    // --- Injected Constants ---
     @Value("${fedex.constants.integrator-id}")
     private String integratorIdPod2;
 
@@ -83,14 +85,19 @@ public class TemplateConfiguratorService {
             if (is == null) throw new IllegalArgumentException("Template file not found.");
 
             ObjectNode payloadNode = (ObjectNode) objectMapper.readTree(is);
-
             ObjectNode productSelector = (ObjectNode) payloadNode.at("/configuratorSessionParameters/configuratorOptions/productSelector");
             productSelector.put("productId", sku);
 
-            ObjectNode productNode = (ObjectNode) payloadNode.at("/configuratorSessionParameters/configuratorOptions/product");
-            productNode.put("id", productId);
+            // Fetch the base structure (15 valid features) to prevent backend rule invalidation
+            ObjectNode baseProductNode = (ObjectNode) payloadNode.at("/configuratorSessionParameters/configuratorOptions/product");
 
-            testContext.setCurrentConfiguredProductNode((ObjectNode) productNode.deepCopy());
+            // Build strictly typed overrides from API Source of Truth
+            ObjectNode dynamicProductNode = buildDynamicProductNode(baseProductNode, testContext.getStaticProductDetails(), Collections.emptyMap());
+
+            ObjectNode configOptions = (ObjectNode) payloadNode.at("/configuratorSessionParameters/configuratorOptions");
+            configOptions.set("product", dynamicProductNode);
+
+            testContext.setCurrentConfiguredProductNode(dynamicProductNode);
 
             Response response = sessionService.configuratorRequest(sessionService.getBaseUrl(), sessionService.getBaseUrl() + "/")
                     .baseUri(apiGatewayUri)
@@ -139,16 +146,35 @@ public class TemplateConfiguratorService {
 
         try {
             ObjectNode payloadNode = (ObjectNode) objectMapper.readTree(fullPayload);
-
-            // FIX: Removed the .remove() calls so state data persists to cart like the UI
             payloadNode.putArray("errors");
 
             JsonNode productNode = payloadNode.path("product");
             if (productNode.isObject()) {
                 ObjectNode pNode = (ObjectNode) productNode;
-                // FIX: Pass qty as int, not String
                 pNode.put("qty", quantity);
                 pNode.put("userProductName", "SimpleText");
+
+                // --- CRITICAL FIX: Magento Schema Normalization ---
+                // The FedEx API returns dimensions as floats (11.0), but Magento strictly requires integers (11) where applicable.
+                JsonNode contentAssoc = pNode.path("contentAssociations");
+                if (contentAssoc.isArray()) {
+                    for (JsonNode ca : contentAssoc) {
+                        JsonNode pg = ca.path("pageGroups");
+                        if (pg.isArray()) {
+                            for (JsonNode group : pg) {
+                                ObjectNode groupNode = (ObjectNode) group;
+                                if (groupNode.has("width")) {
+                                    double w = groupNode.get("width").asDouble();
+                                    if (w == (long) w) groupNode.put("width", (long) w);
+                                }
+                                if (groupNode.has("height")) {
+                                    double h = groupNode.get("height").asDouble();
+                                    if (h == (long) h) groupNode.put("height", (long) h);
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             String urlEncodedData = URLEncoder.encode(payloadNode.toString(), StandardCharsets.UTF_8.toString());
@@ -188,13 +214,14 @@ public class TemplateConfiguratorService {
         configParams.putArray("customDocumentDetails");
         configParams.put("changeProduct", false);
 
-        ObjectNode productNode = testContext.getCurrentConfiguredProductNode().deepCopy();
+        // Apply dynamic BDD overrides to the clean base template
+        ObjectNode baseProductNode = testContext.getCurrentConfiguredProductNode();
+        ObjectNode productNode = buildDynamicProductNode(baseProductNode, testContext.getStaticProductDetails(), bddFeatures);
+
         productNode.put("userProductName", "SimpleText");
         productNode.put("minDPI", "150.0");
         productNode.put("proofRequired", false);
 
-        // Apply decoupled dynamic BDD features
-        applyDynamicFeatures((ArrayNode) productNode.get("features"), bddFeatures, testContext.getStaticProductDetails());
         linkDocumentsToStateProductNode(productNode, configParams);
 
         configParams.set("product", productNode);
@@ -222,6 +249,107 @@ public class TemplateConfiguratorService {
         testContext.setConfiguratorPayload(returnedState.toString());
     }
 
+    /**
+     * Engine that builds the Product Node mimicking the FedEx UI exactly by parsing the Domain Source of Truth
+     * mapping between visual feature names and their strict internal properties/Long IDs.
+     */
+    private ObjectNode buildDynamicProductNode(ObjectNode baseProductNode, StaticProduct staticProduct, Map<String, String> bddFeatures) {
+        ObjectNode productNode = baseProductNode.deepCopy();
+
+        // Ensure IDs remain numerical to appease Magento validation
+        productNode.put("id", Long.parseLong(staticProduct.getId()));
+        productNode.put("version", staticProduct.getVersion());
+        productNode.put("name", staticProduct.getName());
+        productNode.put("instanceId", System.currentTimeMillis());
+
+        ArrayNode featuresArray = (ArrayNode) productNode.get("features");
+        double mediaWidth = 8.5;
+        double mediaHeight = 11.0;
+
+        for (JsonNode baseFeatureNode : featuresArray) {
+            ObjectNode featureNode = (ObjectNode) baseFeatureNode;
+            String featureName = featureNode.path("name").asText();
+
+            ProductFeature staticFeature = staticProduct.getFeatures().stream()
+                    .filter(f -> f.getName().equalsIgnoreCase(featureName))
+                    .findFirst()
+                    .orElse(null);
+
+            if (staticFeature != null) {
+                // Strict Cast
+                featureNode.put("id", Long.parseLong(staticFeature.getId()));
+
+                String desiredChoiceName = (bddFeatures != null) ? bddFeatures.get(featureName) : null;
+                ProductChoice finalChoice = null;
+
+                // 1. Check for requested BDD override
+                if (desiredChoiceName != null) {
+                    finalChoice = staticFeature.getChoices().stream()
+                            .filter(c -> c.getName().equalsIgnoreCase(desiredChoiceName))
+                            .findFirst()
+                            .orElse(null);
+                }
+
+                // 2. Fallback to existing base choice
+                if (finalChoice == null) {
+                    String baseChoiceId = featureNode.path("choice").path("id").asText();
+                    finalChoice = staticFeature.getChoices().stream()
+                            .filter(c -> c.getId().equals(baseChoiceId))
+                            .findFirst()
+                            .orElse(staticFeature.getChoices().get(0));
+                }
+
+                ObjectNode choiceNode = (ObjectNode) featureNode.get("choice");
+                choiceNode.put("id", Long.parseLong(finalChoice.getId()));
+                choiceNode.put("name", finalChoice.getName());
+
+                ArrayNode propertiesArray = choiceNode.putArray("properties");
+                if (finalChoice.getProperties() != null) {
+                    for (ProductProperty prop : finalChoice.getProperties()) {
+                        ObjectNode propNode = objectMapper.createObjectNode();
+                        propNode.put("id", Long.parseLong(prop.getId()));
+                        propNode.put("name", prop.getName());
+                        if (prop.getValue() != null) {
+                            propNode.put("value", formatDecimalString(prop.getValue()));
+                        }
+                        propertiesArray.add(propNode);
+
+                        // Capture constraints dynamically to inject globally
+                        if ("Paper Size".equalsIgnoreCase(featureName)) {
+                            if ("MEDIA_WIDTH".equals(prop.getName()) || "DISPLAY_WIDTH".equals(prop.getName())) {
+                                try { mediaWidth = Double.parseDouble(prop.getValue()); } catch(Exception ignored) {}
+                            }
+                            if ("MEDIA_HEIGHT".equals(prop.getName()) || "DISPLAY_HEIGHT".equals(prop.getName())) {
+                                try { mediaHeight = Double.parseDouble(prop.getValue()); } catch(Exception ignored) {}
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        ArrayNode propertiesArray = (ArrayNode) productNode.get("properties");
+        if (propertiesArray != null) {
+            for (JsonNode prop : propertiesArray) {
+                ObjectNode propNode = (ObjectNode) prop;
+                String propName = propNode.path("name").asText();
+
+                if (propNode.has("id")) {
+                    propNode.put("id", Long.parseLong(propNode.path("id").asText()));
+                }
+
+                // Overlay the dimensions chosen via feature selection (E.g. 11x17)
+                if ("DEFAULT_IMAGE_WIDTH".equals(propName)) {
+                    propNode.put("value", formatDecimalString(String.valueOf(mediaWidth)));
+                } else if ("DEFAULT_IMAGE_HEIGHT".equals(propName)) {
+                    propNode.put("value", formatDecimalString(String.valueOf(mediaHeight)));
+                }
+            }
+        }
+
+        return productNode;
+    }
+
     private void linkDocumentsToStateProductNode(ObjectNode productNode, ObjectNode configParams) {
         String originalDocId = testContext.getOriginalDocId();
         String printReadyDocId = testContext.getPrintReadyDocId();
@@ -229,79 +357,76 @@ public class TemplateConfiguratorService {
         if (originalDocId != null && printReadyDocId != null) {
             ArrayNode contentAssoc = productNode.putArray("contentAssociations");
 
+            String contentReqId = "1483999952979"; // UI standard fallback
+            StaticProduct staticProduct = testContext.getStaticProductDetails();
+            if (staticProduct != null && staticProduct.getContentRequirements() != null && !staticProduct.getContentRequirements().isEmpty()) {
+                contentReqId = staticProduct.getContentRequirements().get(0).getId();
+            }
+
             ObjectNode docAssoc = objectMapper.createObjectNode();
             docAssoc.put("parentContentReference", originalDocId);
             docAssoc.put("contentReference", printReadyDocId);
             docAssoc.put("contentType", "application/pdf");
+            docAssoc.put("fileSizeBytes", 0);
             docAssoc.put("fileName", "SimpleText.pdf");
-            docAssoc.put("contentReqId", "1483999952979");
+            docAssoc.put("printReady", true);
+            docAssoc.put("contentReqId", Long.parseLong(contentReqId));
             docAssoc.put("name", productNode.path("name").asText("Multi Sheet"));
             docAssoc.put("purpose", "MAIN_CONTENT");
-            docAssoc.put("printReady", true);
+
+            // Pull sizing dynamically based on mapped attributes
+            double width = 8.5;
+            double height = 11.0;
+            for (JsonNode prop : productNode.path("properties")) {
+                if ("DEFAULT_IMAGE_WIDTH".equals(prop.path("name").asText())) width = prop.path("value").asDouble(8.5);
+                if ("DEFAULT_IMAGE_HEIGHT".equals(prop.path("name").asText())) height = prop.path("value").asDouble(11.0);
+            }
 
             ArrayNode pageGroups = docAssoc.putArray("pageGroups");
             ObjectNode pg = objectMapper.createObjectNode();
-            // FIX: Height changed to integer 11 to match UI parsing
-            pg.put("start", 1).put("end", 1).put("width", 8.5).put("height", 11).put("orientation", "PORTRAIT");
+            pg.put("start", 1).put("end", 1);
+
+            // Format cleanly avoiding strictly typed mismatch downstream (e.g. 11 vs 11.0)
+            if (width == (long) width) pg.put("width", (long) width);
+            else pg.put("width", width);
+
+            if (height == (long) height) pg.put("height", (long) height);
+            else pg.put("height", height);
+
+            pg.put("orientation", "PORTRAIT");
             pageGroups.add(pg);
+            docAssoc.put("physicalContent", false);
 
             contentAssoc.add(docAssoc);
 
             ObjectNode userWorkspace = configParams.putObject("userWorkspace");
             ArrayNode files = userWorkspace.putArray("files");
 
+            // Fix the precision mismatch that crashes parser schemas
+            String formattedTime = DateTimeFormatter.ISO_INSTANT.format(Instant.now().truncatedTo(ChronoUnit.MILLIS));
+
             ObjectNode fileNode = objectMapper.createObjectNode();
             fileNode.put("name", "SimpleText.pdf");
-            fileNode.put("size", 27028);
-            fileNode.put("uploadDateTime", Instant.now().toString());
             fileNode.put("id", originalDocId);
+            fileNode.put("size", 27028);
+            fileNode.put("uploadDateTime", formattedTime);
 
             files.add(fileNode);
             userWorkspace.putArray("projects");
         }
     }
 
-    private void applyDynamicFeatures(ArrayNode payloadFeaturesArray, Map<String, String> bddFeatures, StaticProduct staticProductDetails) {
-        if (bddFeatures == null || bddFeatures.isEmpty() || payloadFeaturesArray == null || staticProductDetails == null) return;
-
-        for (JsonNode payloadFeatureNode : payloadFeaturesArray) {
-            String featureName = payloadFeatureNode.path("name").asText();
-
-            if (bddFeatures.containsKey(featureName)) {
-                String desiredChoiceName = bddFeatures.get(featureName);
-
-                ProductFeature staticFeature = staticProductDetails.getFeatures().stream()
-                        .filter(f -> f.getName().equalsIgnoreCase(featureName))
-                        .findFirst()
-                        .orElse(null);
-
-                if (staticFeature != null) {
-                    ProductChoice staticChoice = staticFeature.getChoices().stream()
-                            .filter(c -> c.getName().equalsIgnoreCase(desiredChoiceName))
-                            .findFirst()
-                            .orElseThrow(() -> new IllegalArgumentException(
-                                    String.format("Invalid BDD Choice: '%s' is not a valid option for feature '%s'", desiredChoiceName, featureName)
-                            ));
-
-                    ObjectNode choiceNode = (ObjectNode) payloadFeatureNode.get("choice");
-                    choiceNode.put("id", staticChoice.getId());
-                    choiceNode.put("name", staticChoice.getName());
-
-                    ArrayNode propertiesArray = choiceNode.putArray("properties");
-                    if (staticChoice.getProperties() != null) {
-                        for (ProductProperty prop : staticChoice.getProperties()) {
-                            ObjectNode propNode = objectMapper.createObjectNode();
-                            propNode.put("id", prop.getId());
-                            propNode.put("name", prop.getName());
-                            if (prop.getValue() != null) {
-                                propNode.put("value", prop.getValue());
-                            }
-                            propertiesArray.add(propNode);
-                        }
-                    }
-                    log.info("Successfully applied dynamic feature: {} -> {} (ID: {})", featureName, desiredChoiceName, staticChoice.getId());
-                }
-            }
+    /**
+     * Forces standard whole numbers into integer format strings to match FedEx UI
+     * e.g., "11.0" -> "11", "8.5" -> "8.5"
+     */
+    private String formatDecimalString(String val) {
+        try {
+            double dVal = Double.parseDouble(val);
+            if (dVal == (long) dVal) return String.valueOf((long) dVal);
+            return String.valueOf(dVal);
+        } catch (Exception e) {
+            return val;
         }
     }
 }

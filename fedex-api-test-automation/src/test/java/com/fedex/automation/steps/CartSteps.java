@@ -8,6 +8,7 @@ import io.restassured.response.Response;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -27,6 +28,20 @@ public class CartSteps {
         Map<String, String> expectedData = dataTable.asMap(String.class, String.class);
 
         expectedData.forEach((path, expectedValue) -> {
+
+            // --- NEW: Custom Interceptor for Total Quantity Sum ---
+            if ("cart.total_quantity".equalsIgnoreCase(path)) {
+                List<Number> quantities = jsonPath.getList("cart.items.qty", Number.class);
+                int actualTotal = (quantities != null) ? quantities.stream().mapToInt(Number::intValue).sum() : 0;
+
+                assertEquals(Integer.parseInt(expectedValue), actualTotal,
+                        String.format("Mismatch for total item quantity! Expected: %s, Actual: %d", expectedValue, actualTotal));
+
+                log.info("Verified Custom Path [{}] matches expected sum: {}", path, expectedValue);
+                return; // Acts as a 'continue' in a forEach loop
+            }
+
+            // --- Original Behavior for exact JsonPath matching ---
             String actualValue = jsonPath.getString(path);
 
             assertNotNull(actualValue, "The JSON path '" + path + "' returned null or was not found in the response.");

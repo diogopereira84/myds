@@ -45,6 +45,7 @@ public class TestContext {
     // Dynamic 1P Flow
     private String currentProductId;
     private StaticProduct staticProductDetails;
+    private String currentProductVersion;
 
     // Decoupled Search & Add Tracking
     private List<ProductItemContext> searchedProducts = new ArrayList<>();

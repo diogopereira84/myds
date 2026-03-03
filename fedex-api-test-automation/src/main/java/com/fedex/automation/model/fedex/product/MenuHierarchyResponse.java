@@ -16,5 +16,6 @@ public class MenuHierarchyResponse {
         private String id;
         private String name;
         private String productId;
+        private String version; // Added to map "v2", null, etc.
     }
 }

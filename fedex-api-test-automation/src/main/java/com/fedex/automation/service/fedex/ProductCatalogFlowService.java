@@ -1,4 +1,3 @@
-// src/main/java/com/fedex/automation/service/fedex/ProductCatalogFlowService.java
 package com.fedex.automation.service.fedex;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -27,8 +26,7 @@ public class ProductCatalogFlowService {
     @Value("${endpoint.product.details}")
     private String productDetailsEndpoint;
 
-    public String resolveProductIdFromSku(String sku) {
-        // Normalize SKU: "1534436209752-4-3" => "1534436209752"
+    public MenuHierarchyResponse.ProductMenuDetail resolveProductMenuDetailFromSku(String sku) {
         String normalizedId = sku.split("-")[0];
         log.info("Normalized SKU [{}] to Base ID [{}]", sku, normalizedId);
         log.info("Fetching Menu Hierarchy to resolve Product ID for Base ID: {}", normalizedId);
@@ -36,7 +34,7 @@ public class ProductCatalogFlowService {
         Response response = sessionService.authenticatedRequest()
                 .baseUri(wwwBaseUrl)
                 .header("accept", "*/*")
-                .header("sec-fetch-site", "same-site") // Required for cross-subdomain WAF bypass
+                .header("sec-fetch-site", "same-site")
                 .get(menuHierarchyEndpoint);
 
         response.then().statusCode(200);
@@ -44,14 +42,15 @@ public class ProductCatalogFlowService {
         try {
             MenuHierarchyResponse menuHierarchy = objectMapper.readValue(response.asString(), MenuHierarchyResponse.class);
 
-            String productId = menuHierarchy.getProductMenuDetails().stream()
+            MenuHierarchyResponse.ProductMenuDetail matchedDetail = menuHierarchy.getProductMenuDetails().stream()
                     .filter(detail -> normalizedId.equals(detail.getId()))
-                    .map(MenuHierarchyResponse.ProductMenuDetail::getProductId)
                     .findFirst()
                     .orElseThrow(() -> new RuntimeException("Could not find matching menu detail for ID: " + normalizedId));
 
-            log.info("Successfully resolved Product ID [{}] from Menu Details.", productId);
-            return productId;
+            log.info("Successfully resolved Product ID [{}] and Version [{}] from Menu Details.",
+                    matchedDetail.getProductId(), matchedDetail.getVersion());
+
+            return matchedDetail;
 
         } catch (Exception e) {
             log.error("Failed to parse Menu Hierarchy Response.", e);
@@ -59,14 +58,26 @@ public class ProductCatalogFlowService {
         }
     }
 
-    public StaticProductResponse getProductDetails(String productId) {
-        String path = productDetailsEndpoint.replace("{productId}", productId);
-        log.info("Fetching Static Product Details for ID: {} from Domain: {}", productId, wwwBaseUrl);
+    public StaticProductResponse getProductDetails(String productId, String version) {
+        // Construct the suffix. If version is "v2", suffix becomes "-v2". If null/empty, it becomes ""
+        String versionSuffix = (version != null && !version.trim().isEmpty()) ? "-" + version : "";
+
+        String path = productDetailsEndpoint
+                .replace("{productId}", productId)
+                .replace("{version}", versionSuffix);
+
+        // Fallback safety in case the application.properties wasn't updated correctly
+        if (path.contains("-v2.json") && !versionSuffix.equals("-v2")) {
+            path = path.replace("-v2.json", versionSuffix + ".json");
+        }
+
+        log.info("Fetching Static Product Details for ID: {} with Version: '{}' from Domain: {}. Path: {}",
+                productId, version, wwwBaseUrl, path);
 
         Response response = sessionService.authenticatedRequest()
                 .baseUri(wwwBaseUrl)
                 .header("accept", "*/*")
-                .header("sec-fetch-site", "same-site") // Required for cross-subdomain WAF bypass
+                .header("sec-fetch-site", "same-site")
                 .get(path);
 
         response.then().statusCode(200);

@@ -40,6 +40,11 @@ public class CommonCheckoutSteps {
     @Given("I initialize the FedEx session")
     public void iInitializeTheFedExSession() {
         log.info("--- [Step] Initializing Session ---");
+
+        // 1. Force wipe the state to guarantee no data overlaps from previous executions
+        sessionService.clearSession();
+
+        // 2. Start a fresh session
         sessionService.bootstrapSession();
         assertNotNull(sessionService.getFormKey(), "Form Key must be extracted");
     }

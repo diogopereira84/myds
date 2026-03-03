@@ -1,5 +1,6 @@
 package com.fedex.automation.service.fedex;
 
+import io.cucumber.spring.ScenarioScope;
 import io.restassured.specification.RequestSpecification;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
@@ -16,6 +17,7 @@ import static io.restassured.RestAssured.given;
 
 @Slf4j
 @Service
+@ScenarioScope // Instructs Spring to attempt creating a fresh bean per scenario
 public class SessionService {
 
     @Value("${base.url}")
@@ -34,6 +36,16 @@ public class SessionService {
     private String formKey;
 
     private static final Pattern FORM_KEY_INPUT_PATTERN = Pattern.compile("form_key\"\\s+type=\"hidden\"\\s+value=\"([^\"]+)\"");
+
+    /**
+     * ABSOLUTE STATE CLEAR: Call this at the start of every test case
+     * to guarantee 100% isolation and no cookie/formKey reuse.
+     */
+    public void clearSession() {
+        log.info("--- [Scenario Setup] Wiping previous Session State (Cookies & FormKey) ---");
+        this.sessionCookies.clear();
+        this.formKey = null;
+    }
 
     public void login(String username, String password) {
         log.info("--- Performing Login for User: {} ---", username);
@@ -107,13 +119,10 @@ public class SessionService {
     // --- NEW: Configurator Request (Cross-Domain, same-site) ---
     public RequestSpecification configuratorRequest(String originUrl, String refererUrl) {
         return buildBaseRequest(null, refererUrl, originUrl, "same-site");
-        // We leave baseUri off here because TemplateConfiguratorService explicitly calls .baseUri(apiGatewayUri)
     }
-
 
     public void bootstrapSession() {
         try {
-            // Note: Added baseUri(baseUrl) here as well to ensure the bootstrap hits the right environment
             var response = authenticatedRequest().get("/default/checkout/cart/").then().extract().response();
             if (response.getCookies() != null && !response.getCookies().isEmpty()) {
                 this.sessionCookies.putAll(response.getCookies());
