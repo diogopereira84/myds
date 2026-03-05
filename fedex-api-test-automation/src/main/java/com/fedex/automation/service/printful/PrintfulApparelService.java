@@ -28,8 +28,8 @@ public class PrintfulApparelService {
     @Value("${base.url}")
     private String fedexBaseUrl;
 
-    public Response executePunchout(String sku, String offerId, String shopId) {
-        String punchoutPath = String.format("/default/marketplacepunchout/index/index/sku/%s/offer_id/%s/seller_sku/%s/", sku, offerId, shopId);
+    public Response executePunchout(String sku, String offerId, String shopSku) {
+        String punchoutPath = String.format("/default/marketplacepunchout/index/index/sku/%s/offer_id/%s/seller_sku/%s/", sku, offerId, shopSku);
         log.info("Executing Printful Punchout GET to: {}{}", fedexBaseUrl, punchoutPath);
 
         return given()
