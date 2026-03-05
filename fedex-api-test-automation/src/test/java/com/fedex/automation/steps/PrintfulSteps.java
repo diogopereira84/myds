@@ -13,7 +13,6 @@ import com.fedex.automation.utils.PrintfulCheckoutHelper;
 import com.fedex.automation.utils.PrintfulExtractorUtil;
 import com.fedex.automation.utils.PrintfulPayloadMapper;
 import io.cucumber.datatable.DataTable;
-import io.cucumber.java.PendingException;
 import io.cucumber.java.en.And;
 import io.cucumber.java.en.When;
 import io.restassured.response.Response;
