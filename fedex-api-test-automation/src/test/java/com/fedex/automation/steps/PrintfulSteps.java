@@ -349,16 +349,21 @@ public class PrintfulSteps {
                 .toList();
 
         List<PrintfulVariant> baseCheckoutVariants = new ArrayList<>();
-        for (Map.Entry<String, Integer> entry : selectedQuantities.entrySet()) {
+        // Ensure deterministic ordering of variants by sorting sizes before iteration
+        List<String> orderedSizes = new ArrayList<>(selectedQuantities.keySet());
+        orderedSizes.sort(String::compareToIgnoreCase);
+
+        for (String size : orderedSizes) {
+            Integer quantity = selectedQuantities.get(size);
             var matchedVariant = colorVariants.stream()
-                    .filter(v -> entry.getKey().equalsIgnoreCase(v.getSize()))
+                    .filter(v -> size.equalsIgnoreCase(v.getSize()))
                     .findFirst()
-                    .orElseThrow(() -> new IllegalStateException("Missing variant ID for size: " + entry.getKey()));
+                    .orElseThrow(() -> new IllegalStateException("Missing variant ID for size: " + size));
 
             baseCheckoutVariants.add(PrintfulVariant.builder()
                     .variantId(matchedVariant.getId())
-                    .size(entry.getKey())
-                    .amount(entry.getValue())
+                    .size(size)
+                    .amount(quantity)
                     .build());
         }
 
