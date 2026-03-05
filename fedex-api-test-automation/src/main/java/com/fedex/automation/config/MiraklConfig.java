@@ -1,19 +1,25 @@
 package com.fedex.automation.config;
 
-import lombok.Getter;
+import lombok.Data;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 
+@Data
 @Configuration
-@Getter
 public class MiraklConfig {
-
-    @Value("${mirakl.ApiKey}")
-    private String apiKey;
 
     @Value("${mirakl.base.url}")
     private String baseUrl;
 
-    @Value("${endpoint.mirakl.offers}")
+    @Value("${mirakl.api.key}")
+    private String apiKey;
+
+    @Value("${mirakl.endpoint.offers}")
     private String offersEndpoint;
+
+    @Value("${mirakl.endpoint.shop.offers}")
+    private String shopOffersEndpoint;
+
+    @Value("${mirakl.shop.id.printful}")
+    private String printfulShopId;
 }

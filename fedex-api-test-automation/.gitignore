@@ -48,3 +48,7 @@ hs_err_pid*
 allure-results/
 allure-report/
 .allure/
+
+# AI Prompts and Copilot files
+.github/*.md
+.github/copilot*

@@ -3,6 +3,7 @@ package com.fedex.automation.service.mirakl;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fedex.automation.config.MiraklConfig;
+import com.fedex.automation.model.mirakl.MiraklShopOffersResponse;
 import io.restassured.response.Response;
 import io.restassured.specification.RequestSpecification;
 import lombok.RequiredArgsConstructor;
@@ -58,5 +59,34 @@ public class OfferService {
         } catch (Exception e) {
             throw new RuntimeException("Failed to parse Mirakl API response", e);
         }
+    }
+
+    public MiraklShopOffersResponse.MiraklOffer getOfferFromShop(String shopId, String targetSku) {
+        log.info("--- Fetching Mirakl Offers for Shop ID: {} to find SKU: '{}' ---", shopId, targetSku);
+
+        String endpoint = miraklConfig.getShopOffersEndpoint().replace("{shopId}", shopId);
+
+        Response response = given()
+                .spec(defaultRequestSpec)
+                .baseUri(miraklConfig.getBaseUrl())
+                .header("Authorization", miraklConfig.getApiKey())
+                .header("Accept", "application/json")
+                .get(endpoint)
+                .then()
+                .statusCode(200)
+                .extract()
+                .response();
+
+        MiraklShopOffersResponse offersResponse = response.as(MiraklShopOffersResponse.class);
+
+        if (offersResponse.getOffers() == null || offersResponse.getOffers().isEmpty()) {
+            throw new RuntimeException("No offers found for Shop ID: " + shopId);
+        }
+
+        // Return the full offer object so we can access offerId AND shopSku
+        return offersResponse.getOffers().stream()
+                .filter(offer -> targetSku.equals(offer.getProductSku()))
+                .findFirst()
+                .orElseThrow(() -> new RuntimeException("Offer not found for SKU: " + targetSku + " in Shop: " + shopId));
     }
 }

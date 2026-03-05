@@ -124,11 +124,23 @@ public class SessionService {
     public void bootstrapSession() {
         try {
             var response = authenticatedRequest().get("/default/checkout/cart/").then().extract().response();
+
             if (response.getCookies() != null && !response.getCookies().isEmpty()) {
                 this.sessionCookies.putAll(response.getCookies());
+
+                // Log the PHPSESSID if it's present in the extracted cookies
+                if (this.sessionCookies.containsKey("PHPSESSID")) {
+                    log.info("Extracted PHPSESSID: {}", this.sessionCookies.get("PHPSESSID"));
+                }
             }
+
             Matcher inputMatcher = FORM_KEY_INPUT_PATTERN.matcher(response.getBody().asString());
-            if (inputMatcher.find()) this.formKey = inputMatcher.group(1);
+            if (inputMatcher.find()) {
+                this.formKey = inputMatcher.group(1);
+
+                // Log the form_key once it's matched
+                log.info("Extracted form_key from Magento: {}", this.formKey);
+            }
         } catch (Exception e) {
             log.warn("Bootstrap request failed: {}", e.getMessage());
         }
