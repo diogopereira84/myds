@@ -264,7 +264,7 @@ public class PrintfulSteps {
     @And("^I configure the Printful apparel variant:$")
     public void iConfigureThePrintfulApparelVariant(DataTable dataTable) {
         List<Map<String, String>> rows = dataTable.asMaps(String.class, String.class);
-        Map<String, String> row = rows.getFirst();
+        Map<String, String> row = rows.get(0);
 
         String expectedProductName = row.get("productName");
         String expectedColor = row.get("color");
