@@ -32,7 +32,6 @@ public class PrintfulConfig {
     @Value("${apparel.endpoint.order.checkout}")
     private String orderCheckoutEndpoint;
 
-    // --- Retry Properties ---
     @Value("${apparel.retry.timeout.seconds:10}")
     private int retryTimeoutSeconds;
 

@@ -18,7 +18,7 @@ public class CommonSearchSteps {
     private final SearchStrategyFactory searchStrategyFactory;
 
     // The Regex automatically matches the Enum values!
-    @When("^I search for the following (PRINTFUL|ESSENDANT|COMPANYBOX|FEDEX_1P) products:$")
+    @When("^I search for the following (PRINTFUL|ESSENDANT|COMPANYBOX|FEDEX|NAVITOR) products:$")
     public void iSearchForTheFollowingVendorProducts(Vendor vendor, DataTable dataTable) {
         log.info("--- Initiating {} Product Search ---", vendor.name());
 

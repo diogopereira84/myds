@@ -12,8 +12,8 @@ import com.fedex.automation.service.printful.PrintfulApparelService;
 import com.fedex.automation.utils.PrintfulCheckoutHelper;
 import com.fedex.automation.utils.PrintfulExtractorUtil;
 import com.fedex.automation.utils.PrintfulPayloadMapper;
+import com.fedex.automation.utils.TestResourceProvider;
 import io.cucumber.datatable.DataTable;
-import io.cucumber.java.PendingException;
 import io.cucumber.java.en.And;
 import io.cucumber.java.en.When;
 import io.restassured.response.Response;
@@ -32,6 +32,7 @@ public class PrintfulSteps {
     private final PrintfulApparelService printfulApparelService;
     private final TestContext testContext;
     private final MiraklConfig miraklConfig;
+    private final TestResourceProvider testResourceProvider;
 
     @And("^I resolve the Mirakl offer details for the following Printful products:$")
     public void iResolveTheMiraklOfferDetails(DataTable dataTable) {
@@ -71,13 +72,10 @@ public class PrintfulSteps {
         }
         String nonce = authNonceResponse.getNonce();
 
-        // Target the local test file to upload
-        java.io.File uploadFile = new java.io.File("src/test/resources/testdata/random.jpg");
-        if (!uploadFile.exists()) {
-            throw new IllegalStateException("Test file does not exist at path: " + uploadFile.getAbsolutePath());
-        }
+        // Load test file via provider to keep resource access concerns isolated
+        java.io.File uploadFile = testResourceProvider.loadToTempFile("classpath:testdata/random.jpg");
 
-        // --- Step 0: Get Credentials ---
+        // --- Get Credentials ---
         var credsResponse = printfulApparelService.getS3UploadCredentials(nonce);
         var creds = credsResponse.getResult();
 
@@ -85,7 +83,7 @@ public class PrintfulSteps {
             throw new IllegalStateException("Failed to retrieve S3 Upload Credentials from Printful.");
         }
 
-        // --- Step 1: Upload directly to Amazon S3 ---
+        // --- Upload directly to Amazon S3 ---
         Response s3Response = printfulApparelService.uploadFileToS3(creds, uploadFile);
 
         // Parse the AWS S3 XML Response
@@ -103,7 +101,7 @@ public class PrintfulSteps {
         long fileSize = uploadFile.length();
         String mimeType = fileName.endsWith(".pdf") ? "application/pdf" : "image/jpeg";
 
-        // --- Step 2: Callback to Printful ---
+        // --- Callback to Printful ---
         var callbackResponse = printfulApparelService.fileLibraryUploadCallback(
                 nonce,
                 creds.getTemporaryFileId(),
@@ -122,7 +120,7 @@ public class PrintfulSteps {
             throw new IllegalStateException("Failed to retrieve temporaryFileKey from Printful Callback. Printful returned success: 0.");
         }
 
-        // --- Step 3: Verify File Availability ---
+        // --- Verify File Availability ---
         printfulApparelService.fileLibraryGetUploadedFile(nonce, temporaryFileKey);
 
         // Save the key for the final checkout payload
@@ -158,8 +156,6 @@ public class PrintfulSteps {
             throw new IllegalStateException("Failed to generate Auth Nonce. Response was null or missing nonce token.");
         }
 
-
-
         // Save the result model into context for later stages!
         testContext.setAuthNonceResponse(nonceResponse);
         log.info("Successfully Generated Auth Nonce: {} for the externalProductId: {}", nonceResponse.getNonce(), nonceResponse.getExternalProductId());
@@ -169,21 +165,21 @@ public class PrintfulSteps {
     public void iExecuteThePrintfulPunchout() {
         String sku = testContext.getCurrentSku();
         String offerId = testContext.getCurrentOfferId();
-        String shopId = testContext.getShopId();
+        String shopSku = testContext.getShopSku();
 
-        if (sku == null || offerId == null || shopId == null) {
+        if (sku == null || offerId == null || shopSku == null) {
             throw new IllegalStateException("Missing required IDs. Ensure 'I resolve the Mirakl offer details' was run first.");
         }
 
-        // 1. Execute Punchout
-        Response redirectResponse = printfulApparelService.executePunchout(sku, offerId, shopId);
+        // Execute Punchout
+        Response redirectResponse = printfulApparelService.executePunchout(sku, offerId, shopSku);
 
-        // 2. Harvest PHPSESSID
+        // Harvest PHPSESSID
         if (redirectResponse.getCookies().containsKey(PrintfulConstants.COOKIE_PHPSESSID)) {
             testContext.setPrintfulPhpSessIdCookie(redirectResponse.getCookies().get(PrintfulConstants.COOKIE_PHPSESSID));
         }
 
-        // 3. Follow Redirect
+        // Follow Redirect
         String redirectLocation = redirectResponse.getHeader("Location");
         if (redirectLocation == null) {
             throw new IllegalStateException("Expected a 302 redirect with a Location header, but none was found.");
@@ -192,7 +188,7 @@ public class PrintfulSteps {
         Response finalResponse = printfulApparelService.followRedirect(redirectLocation, testContext.getPrintfulPhpSessIdCookie());
         testContext.setLastResponse(finalResponse);
 
-        // 4. Delegate Extractions to Utility
+        // Delegate Extractions to Utility
         extractAndSetContextData(finalResponse, redirectLocation);
     }
 
@@ -237,7 +233,7 @@ public class PrintfulSteps {
     private void extractAndSetContextData(Response response, String redirectLocation) {
         String responseBody = response.asString();
 
-        // 1. Strictly Extract Form Key
+        // Strictly Extract Form Key
         String formKey = PrintfulExtractorUtil.extractFormKey(response, redirectLocation);
         if (formKey == null) {
             throw new IllegalStateException("Extraction Failure: Could not extract form_key from cookies, Location header, or HTML body.");
@@ -253,18 +249,16 @@ public class PrintfulSteps {
         testContext.setPrintfulSessionId(sessionId);
         log.info("Extracted Printful Session ID: {}", sessionId);
 
-        // 3. Strictly Extract External Product ID
+        // Strictly Extract External Product ID
         String extProductId = PrintfulExtractorUtil.extractExternalProductId(redirectLocation, responseBody);
         if (extProductId == null) {
             throw new IllegalStateException("Extraction Failure: Could not dynamically extract External Product ID (UUID) from response.");
         }
-       // testContext.setExternalProductId(extProductId);
-      //  log.info("Extracted External Product ID: {}", extProductId);
     }
     @And("^I configure the Printful apparel variant:$")
     public void iConfigureThePrintfulApparelVariant(DataTable dataTable) {
         List<Map<String, String>> rows = dataTable.asMaps(String.class, String.class);
-        Map<String, String> row = rows.getFirst();
+        Map<String, String> row = rows.get(0);
 
         String expectedProductName = row.get("productName");
         String expectedColor = row.get("color");
@@ -281,14 +275,14 @@ public class PrintfulSteps {
 
         log.info("--- Configuring Printful Variant: {} - {} using Category ID: {} ---", expectedProductName, expectedColor, shopSkuCategoryId);
 
-        // 1. Fetch the Catalog (This will log the cURL via defaultRequestSpec)
+        // Fetch the Catalog (This will log the cURL via defaultRequestSpec)
         var catalogResponse = printfulApparelService.getCatalogProducts(shopSkuCategoryId);
 
         if (catalogResponse == null || catalogResponse.getData() == null || catalogResponse.getData().isEmpty()) {
             throw new IllegalStateException("Printful Catalog API returned an empty or null response for Category ID: " + shopSkuCategoryId);
         }
 
-        // 2. Filter the JSON Data for the matching product
+        // Filter the JSON Data for the matching product
         var matchedProduct = catalogResponse.getData().stream()
                 .filter(p -> !p.isDiscontinued()) // Must not be discontinued
                 .filter(p -> p.getName() != null && p.getName().startsWith(expectedProductName)) // Name must start with the BDD input
@@ -296,7 +290,7 @@ public class PrintfulSteps {
                 .findFirst()
                 .orElseThrow(() -> new IllegalStateException("No valid active Printful catalog product found matching name '" + expectedProductName + "' and color '" + expectedColor + "'"));
 
-        // 3. Save the resolved ID (e.g. 146) to context
+        // Save the resolved ID (e.g. 146) to context
         testContext.setPrintfulProductId(String.valueOf(matchedProduct.getId()));
         testContext.setPrintfulSelectedColor(expectedColor);
 
@@ -341,7 +335,6 @@ public class PrintfulSteps {
         String targetTechnique = testContext.getPrintfulSelectedTechnique();
         Map<String, Integer> selectedQuantities = testContext.getPrintfulSelectedQuantities();
 
-        // 1. Fetch the variants matching the color and sizes (returns a list of 8 variants with just IDs/Sizes)
         // (This uses the code from the previous iteration to build 'baseCheckoutVariants')
         var variantsResponse = printfulApparelService.getCatalogVariants(productId);
         List<PrintfulCatalogVariantsResponse.CatalogVariant> colorVariants = variantsResponse.getData().stream()
@@ -349,16 +342,19 @@ public class PrintfulSteps {
                 .toList();
 
         List<PrintfulVariant> baseCheckoutVariants = new ArrayList<>();
-        for (Map.Entry<String, Integer> entry : selectedQuantities.entrySet()) {
+        // Ensure deterministic ordering of variants by sorting sizes before iteration
+        List<String> orderedSizes = new ArrayList<>(selectedQuantities.keySet());
+        orderedSizes.sort(String::compareToIgnoreCase);
+        for (String size : orderedSizes) {
+            Integer quantity = selectedQuantities.get(size);
             var matchedVariant = colorVariants.stream()
-                    .filter(v -> entry.getKey().equalsIgnoreCase(v.getSize()))
+                    .filter(v -> size.equalsIgnoreCase(v.getSize()))
                     .findFirst()
-                    .orElseThrow(() -> new IllegalStateException("Missing variant ID for size: " + entry.getKey()));
-
+                    .orElseThrow(() -> new IllegalStateException("Missing variant ID for size: " + size));
             baseCheckoutVariants.add(PrintfulVariant.builder()
                     .variantId(matchedVariant.getId())
-                    .size(entry.getKey())
-                    .amount(entry.getValue())
+                    .size(size)
+                    .amount(quantity)
                     .build());
         }
 
@@ -369,14 +365,14 @@ public class PrintfulSteps {
                 testContext.getPrintfulFormKeyCookie()
         );
 
-        // 3. Delegate the complex price extraction and difference calculation to the Helper
+        // Delegate the complex price extraction and difference calculation to the Helper
         List<PrintfulVariant> fullyPricedVariants = PrintfulCheckoutHelper.buildVariantMapWithPricing(
                 baseCheckoutVariants,
                 pricingResponse,
                 targetTechnique
         );
 
-        // 4. Build the final JSON Payload
+        // Build the final JSON Payload
         PrintfulCheckoutRequest checkoutPayload = PrintfulCheckoutRequest.builder()
                 .externalProductId(testContext.getExternalProductId()) // fb269248-3bd2...
                 .sessionId(testContext.getPrintfulSessionId())         // 6cab8bbf3788...

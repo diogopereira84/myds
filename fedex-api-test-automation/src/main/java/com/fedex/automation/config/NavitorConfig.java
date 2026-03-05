@@ -8,15 +8,12 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class NavitorConfig {
 
-    @Value("${printful.base.url}")
+    @Value("${navitor.base.url}")
     private String baseUrl;
 
-    @Value("${printful.api.key}")
+    @Value("${navitor.api.key}")
     private String apiKey;
 
-    @Value("${printful.store.id}")
+    @Value("${navitor.store.id}")
     private String storeId;
-
-    @Value("${printful.s3.url}")
-    private String baseUrlS3;
 }

@@ -1,6 +1,5 @@
 package com.fedex.automation.service.printful;
 
-import com.fedex.automation.config.MiraklConfig;
 import com.fedex.automation.config.PrintfulConfig;
 import com.fedex.automation.model.printful.*;
 import io.restassured.response.Response;
@@ -9,7 +8,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.awaitility.Awaitility;
 import org.awaitility.core.ConditionTimeoutException;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -28,8 +26,8 @@ public class PrintfulApparelService {
     @Value("${base.url}")
     private String fedexBaseUrl;
 
-    public Response executePunchout(String sku, String offerId, String shopId) {
-        String punchoutPath = String.format("/default/marketplacepunchout/index/index/sku/%s/offer_id/%s/seller_sku/%s/", sku, offerId, shopId);
+    public Response executePunchout(String sku, String offerId, String shopSku) {
+        String punchoutPath = String.format("/default/marketplacepunchout/index/index/sku/%s/offer_id/%s/seller_sku/%s/", sku, offerId, shopSku);
         log.info("Executing Printful Punchout GET to: {}{}", fedexBaseUrl, punchoutPath);
 
         return given()
@@ -279,7 +277,7 @@ public class PrintfulApparelService {
 
         return given()
                 .spec(defaultRequestSpec) // <--- THIS triggers your framework's CurlLoggingFilter
-                .baseUri("https://api.printful.com")
+                .baseUri(printfulConfig.getPrintfulBaseUrl())
                 .header("Authorization", "Bearer " + printfulConfig.getPrintfulApiToken())
                 .header("X-PF-Store-ID", printfulConfig.getPrintfulStoreId())
                 .queryParam("category_ids", categoryId)
@@ -295,7 +293,7 @@ public class PrintfulApparelService {
 
         return given()
                 .spec(defaultRequestSpec)
-                .baseUri("https://api.printful.com") // Targets api.printful.com
+                .baseUri(printfulConfig.getPrintfulBaseUrl()) // Targets API host from config
                 .header("Authorization", "Bearer " + printfulConfig.getPrintfulApiToken())
                 .header("X-PF-Store-ID", printfulConfig.getPrintfulStoreId())
                 .queryParam("limit", 100)
@@ -340,3 +338,4 @@ public class PrintfulApparelService {
                 .response();
     }
 }
+

@@ -8,15 +8,6 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class FedexConfig {
 
-    @Value("${printful.base.url}")
+    @Value("${fedex.base.url}")
     private String baseUrl;
-
-    @Value("${printful.api.key}")
-    private String apiKey;
-
-    @Value("${printful.store.id}")
-    private String storeId;
-
-    @Value("${printful.s3.url}")
-    private String baseUrlS3;
 }
