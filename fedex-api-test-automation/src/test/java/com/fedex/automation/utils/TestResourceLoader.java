@@ -13,7 +13,7 @@ import org.springframework.core.io.ResourceLoader;
 import org.springframework.stereotype.Component;
 
 @Primary
-@Profile({"stage2", "stage3", "dev"})
+@Profile("!local")
 @Component
 public class TestResourceLoader implements TestResourceProvider {
     private final ResourceLoader resourceLoader;
@@ -21,6 +21,12 @@ public class TestResourceLoader implements TestResourceProvider {
     @Autowired
     public TestResourceLoader(ResourceLoader resourceLoader) {
         this.resourceLoader = resourceLoader;
+    }
+
+    @jakarta.annotation.PostConstruct
+    public void logProviderSelection() {
+        org.slf4j.LoggerFactory.getLogger(TestResourceLoader.class)
+                .info("TestResourceProvider active: classpath (ResourceLoader)");
     }
 
     @Override

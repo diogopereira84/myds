@@ -15,6 +15,7 @@ import com.fedex.automation.utils.PrintfulPayloadMapper;
 import com.fedex.automation.utils.TestResourceProvider;
 import io.cucumber.datatable.DataTable;
 import io.cucumber.java.en.And;
+import io.cucumber.java.en.Then;
 import io.cucumber.java.en.When;
 import io.restassured.response.Response;
 import lombok.RequiredArgsConstructor;
@@ -155,7 +156,6 @@ public class PrintfulSteps {
         if (nonceResponse.getNonce() == null) {
             throw new IllegalStateException("Failed to generate Auth Nonce. Response was null or missing nonce token.");
         }
-
         // Save the result model into context for later stages!
         testContext.setAuthNonceResponse(nonceResponse);
         log.info("Successfully Generated Auth Nonce: {} for the externalProductId: {}", nonceResponse.getNonce(), nonceResponse.getExternalProductId());
@@ -241,7 +241,7 @@ public class PrintfulSteps {
         testContext.setPrintfulFormKeyCookie(formKey);
         log.info("Extracted form_key: {}", formKey);
 
-        // 2. Strictly Extract Session ID
+        // Strictly Extract Session ID
         String sessionId = PrintfulExtractorUtil.extractSessionId(redirectLocation, responseBody);
         if (sessionId == null) {
             throw new IllegalStateException("Extraction Failure: Could not dynamically extract Printful session_id from response.");
@@ -254,6 +254,8 @@ public class PrintfulSteps {
         if (extProductId == null) {
             throw new IllegalStateException("Extraction Failure: Could not dynamically extract External Product ID (UUID) from response.");
         }
+        testContext.setExternalProductId(extProductId);
+        log.info("Extracted External Product ID: {}", extProductId);
     }
     @And("^I configure the Printful apparel variant:$")
     public void iConfigureThePrintfulApparelVariant(DataTable dataTable) {
@@ -389,5 +391,50 @@ public class PrintfulSteps {
 
         log.info("Apparel Checkout Response Status: {}", checkoutResponse.statusCode());
         testContext.setLastResponse(checkoutResponse);
+    }
+
+    @Then("the Printful checkout response should be successful")
+    public void thePrintfulCheckoutResponseShouldBeSuccessful() {
+        Response response = testContext.getLastResponse();
+        if (response == null) {
+            throw new IllegalStateException("Checkout response is missing. Ensure the checkout step ran.");
+        }
+
+        int statusCode = response.statusCode();
+        String body = response.asString();
+
+        if (statusCode != 200) {
+            throw new IllegalStateException("Checkout failed with HTTP " + statusCode + ". Body: " + body);
+        }
+        if (body == null || body.trim().isEmpty()) {
+            throw new IllegalStateException("Checkout response body was empty.");
+        }
+
+        log.info("Checkout response verified. HTTP {} and non-empty body.", statusCode);
+    }
+
+    @And("the Printful punchout context should be populated")
+    public void thePrintfulPunchoutContextShouldBePopulated() {
+        if (testContext.getPrintfulSessionId() == null || testContext.getPrintfulSessionId().isBlank()) {
+            throw new IllegalStateException("Printful sessionId is missing after punchout.");
+        }
+        if (testContext.getPrintfulFormKeyCookie() == null || testContext.getPrintfulFormKeyCookie().isBlank()) {
+            throw new IllegalStateException("Printful form_key is missing after punchout.");
+        }
+        String externalProductId = testContext.getExternalProductId();
+        if (externalProductId == null || externalProductId.isBlank()) {
+            throw new IllegalStateException("External productId is missing after punchout.");
+        }
+
+        String uuidRegex = "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$";
+        if (!externalProductId.matches(uuidRegex)) {
+            throw new IllegalStateException("External productId is not a valid UUID: " + externalProductId);
+        }
+        try {
+            java.util.UUID.fromString(externalProductId);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalStateException("External productId is not a valid UUID: " + externalProductId, e);
+        }
+        log.info("Punchout context verified: sessionId, form_key, externalProductId present.");
     }
 }

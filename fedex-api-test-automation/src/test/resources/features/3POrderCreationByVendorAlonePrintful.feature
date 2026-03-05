@@ -10,6 +10,7 @@ Feature: Printful 3P Order Creation by Vendor Alone - Product Checkout Flow
       | Hoodies & Sweatshirts  |
     # Protocol & State Handshake
     And I execute the Printful punchout for the resolved products
+    And the Printful punchout context should be populated
     # Security & State Validation
     And I validate the Custom Apparel session
     And I generate an auth nonce for the Custom Apparel session
@@ -23,6 +24,7 @@ Feature: Printful 3P Order Creation by Vendor Alone - Product Checkout Flow
       | 0   | 1   | 0   | 0   | 0   | 0   | 0   | 0   |
     # Fetches the variants API, matches the IDs to the sizes above, and builds the payload
     When I add to cart or checkout the Printful apparel variants
+    Then the Printful checkout response should be successful
     Examples:
       | firstName | lastName | email                         |
       | Harvey    | Hamilton | harvey.hamilton.osv@fedex.com |

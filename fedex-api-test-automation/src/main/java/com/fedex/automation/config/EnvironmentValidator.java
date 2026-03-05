@@ -1,70 +1,72 @@
 package com.fedex.automation.config;
 
-import jakarta.annotation.PostConstruct;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Component;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.core.env.Environment;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
-@Slf4j
-@Component
-public class EnvironmentValidator {
+public final class EnvironmentValidator {
 
-    @Value("${TEST_ENV:}")
-    private String testEnv;
+    private static final Logger LOGGER = LoggerFactory.getLogger(EnvironmentValidator.class);
 
-    @Value("${SANDBOX_PUBLIC_APIKEY:}")
-    private String sandboxApiKey;
+    private EnvironmentValidator() {
+        // utility class
+    }
 
-    @Value("${SANDBOX_ENV_ID:}")
-    private String sandboxEnvId;
+    public static void validate(Environment environment,
+                                boolean validationEnabled,
+                                String requiredEnvKeys,
+                                String appProfileName) {
+        if (environment == null) {
+            throw new IllegalArgumentException("Environment must not be null.");
+        }
 
-    @Value("${MIRAKL_APIKEY:}")
-    private String miraklApiKey;
+        LOGGER.info("Active profiles: {}", String.join(",", environment.getActiveProfiles()));
+        LOGGER.info("Configured profile marker: {}", appProfileName);
 
-    @Value("${API_GATEWAY_CLIENT_ID:}")
-    private String apiGatewayClientId;
+        if (!validationEnabled) {
+            LOGGER.warn("Environment validation disabled (env.validation.enabled=false).");
+            return;
+        }
 
-    @Value("${MAGENTO_UI_CLIENT_ID:}")
-    private String magentoUiClientId;
+        List<String> missingVars = getMissingRequiredKeys(environment, requiredEnvKeys);
 
-    @Value("${ADMIN_USERNAME:}")
-    private String adminUsername;
-
-    @Value("${ADMIN_PASSWORD:}")
-    private String adminPassword;
-
-    @PostConstruct
-    public void validate() {
-        List<String> missingVars = new ArrayList<>();
-
-        if (testEnv == null || testEnv.isBlank()) missingVars.add("TEST_ENV");
-        if (sandboxApiKey == null || sandboxApiKey.isBlank()) missingVars.add("SANDBOX_PUBLIC_APIKEY");
-        if (sandboxEnvId == null || sandboxEnvId.isBlank()) missingVars.add("SANDBOX_ENV_ID");
-        if (miraklApiKey == null || miraklApiKey.isBlank()) missingVars.add("MIRAKL_APIKEY");
-        if (apiGatewayClientId == null || apiGatewayClientId.isBlank()) missingVars.add("API_GATEWAY_CLIENT_ID");
-        if (magentoUiClientId == null || magentoUiClientId.isBlank()) missingVars.add("MAGENTO_UI_CLIENT_ID");
-        if (adminUsername == null || adminUsername.isBlank()) missingVars.add("ADMIN_USERNAME");
-        if (adminPassword == null || adminPassword.isBlank()) missingVars.add("ADMIN_PASSWORD");
-
-        // If any variables are missing, log a clear error and abort
         if (!missingVars.isEmpty()) {
-            log.error("\n===================================================================");
-            log.error(" CRITICAL: MISSING ENVIRONMENT VARIABLES ");
-            log.error("The framework cannot start because the following required variables are not set:");
+            LOGGER.error("\n===================================================================");
+            LOGGER.error(" CRITICAL: MISSING ENVIRONMENT VARIABLES ");
+            LOGGER.error("The framework cannot start because the following required variables are not set:");
 
             for (String var : missingVars) {
-                log.error("  -> {}", var);
+                LOGGER.error("  -> {}", var);
             }
 
-            log.error("Please configure them in your IntelliJ Run Configuration or export them in your terminal.");
-            log.error("===================================================================\n");
+            LOGGER.error("Please configure them in your IntelliJ Run Configuration or export them in your terminal.");
+            LOGGER.error("===================================================================\n");
 
             throw new IllegalStateException("Test execution aborted due to missing environment variables.");
         }
 
-        log.info(" All mandatory environment variables are successfully loaded.");
+        LOGGER.info(" All mandatory environment variables are successfully loaded.");
+    }
+
+    private static List<String> getMissingRequiredKeys(Environment environment, String requiredEnvKeys) {
+        List<String> missingVars = new ArrayList<>();
+        if (requiredEnvKeys == null || requiredEnvKeys.isBlank()) {
+            return missingVars;
+        }
+
+        Arrays.stream(requiredEnvKeys.split(","))
+                .map(String::trim)
+                .filter(key -> !key.isEmpty())
+                .forEach(key -> {
+                    String value = environment.getProperty(key);
+                    if (value == null || value.isBlank()) {
+                        missingVars.add(key);
+                    }
+                });
+        return missingVars;
     }
 }

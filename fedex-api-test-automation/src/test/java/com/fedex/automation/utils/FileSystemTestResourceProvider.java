@@ -1,5 +1,6 @@
 package com.fedex.automation.utils;
 
+import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
@@ -59,5 +60,11 @@ public class FileSystemTestResourceProvider implements TestResourceProvider {
             return filename.substring(dotIndex);
         }
         return ".tmp";
+    }
+
+    @PostConstruct
+    public void logProviderSelection() {
+        org.slf4j.LoggerFactory.getLogger(FileSystemTestResourceProvider.class)
+                .info("TestResourceProvider active: filesystem (baseDir={})", baseDir);
     }
 }

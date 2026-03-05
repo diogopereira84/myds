@@ -8,6 +8,6 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class FedexConfig {
 
-    @Value("${fedex.base.url}")
+    @Value("${base.url}")
     private String baseUrl;
 }

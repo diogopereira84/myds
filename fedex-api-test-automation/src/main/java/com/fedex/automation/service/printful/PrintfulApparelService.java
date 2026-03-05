@@ -179,7 +179,7 @@ public class PrintfulApparelService {
 
     public Response uploadFileToS3(S3UploadCredentialsResponse.S3Credentials creds, java.io.File file) {
         log.info("--- Step 1: Uploading File to S3 Bucket ---");
-        return given()
+        var request = given()
                 .spec(defaultRequestSpec)
                 .baseUri(printfulConfig.getPrintfulS3Url())
                 .multiPart("success_action_status", creds.getSuccessActionStatus())
@@ -188,9 +188,14 @@ public class PrintfulApparelService {
                 .multiPart("X-Amz-Credential", creds.getXAmzCredential())
                 .multiPart("X-Amz-Algorithm", creds.getXAmzAlgorithm())
                 .multiPart("X-Amz-Date", creds.getXAmzDate())
-                .multiPart("Policy", creds.getPolicy())
-                // Only attach signature if Printful provided one
-                .multiPart("X-Amz-Signature", creds.getXAmzSignature() != null ? creds.getXAmzSignature() : "")
+                .multiPart("Policy", creds.getPolicy());
+
+        String signature = creds.getXAmzSignature();
+        if (signature != null && !signature.isBlank()) {
+            request.multiPart("X-Amz-Signature", signature);
+        }
+
+        return request
                 .multiPart("file", file)
                 .post()
                 .then()
@@ -268,7 +273,9 @@ public class PrintfulApparelService {
                     });
 
         } catch (ConditionTimeoutException e) {
-            log.error("File verification failed: Timed out after {} seconds of retrying.", printfulConfig.getRetryTimeoutSeconds());
+            String message = "File verification failed: Timed out after " + printfulConfig.getRetryTimeoutSeconds() + " seconds of retrying.";
+            log.error(message);
+            throw new IllegalStateException(message, e);
         }
     }
 
@@ -331,7 +338,7 @@ public class PrintfulApparelService {
                 .cookie("PHPSESSID", phpSessId)
                 .cookie("form_key", formKey)
                 .body(checkoutPayload)
-                .post("/api/order/checkout")
+                .post(printfulConfig.getOrderCheckoutEndpoint())
                 .then()
                 .statusCode(200)
                 .extract()
