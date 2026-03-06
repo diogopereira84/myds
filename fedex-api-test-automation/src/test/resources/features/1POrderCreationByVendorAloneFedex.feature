@@ -2,19 +2,18 @@ Feature: FedEx Office 1P Product Checkout Flow
 
   Scenario Outline: 1P Order Creation with Dynamic Product Configuration
     Given I initialize the FedEx session
-
-    # 1. Dynamically resolves base SKU and ID from Menu Hierarchy
+    # Dynamically resolves base SKU and ID from Menu Hierarchy
     And I search for the 1P product "<productName>"
     And I request an internal rate quote using the default template
     And I fetch the Menu Hierarchy to resolve the Product ID
-    # 2. Downloads the Source of Truth JSON (e.g., product-1456773326927-v2.json)
+    # Downloads the Source of Truth JSON (e.g., product-1456773326927-v2.json)
     And I fetch the dynamic product details for the selected product
     And I initiate a 1P Configurator Session for the current product
     And I verify the Configurator Session was successfully created
     And I perform a Configurator Session Search
-    # 3. Uploads content to be mapped to the dynamically selected dimensions
+    # Uploads content to be mapped to the dynamically selected dimensions
     And I upload the document "<documentName>" to the FedEx repository
-    # 4. Injects BDD choices directly into the Source of Truth schema mapper
+    # Injects BDD choices directly into the Source of Truth schema mapper
     And I create the Configurator State and apply the following features:
       | Print Color   | <printColor>   |
       | Paper Size    | <paperSize>    |
@@ -24,7 +23,7 @@ Feature: FedEx Office 1P Product Checkout Flow
     And I verify the Configurator State was successfully created
     And I add <quantity> configured document product(s) to the cart
     And I scrape the cart context data
-    # 5. Dynamic validations based on configuration pricing and quantities
+    # Dynamic validations based on configuration pricing and quantities
     And I verify the customer load section contains following information:
       | cart.summary_count               | <quantity>       |
       | cart.subtotalAmount              | <subtotalAmount> |

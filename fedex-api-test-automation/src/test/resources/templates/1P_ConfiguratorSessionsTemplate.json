@@ -398,7 +398,7 @@
       "singleProjectMode": "false",
       "userWorkspace": {},
       "userPreferences": {
-        "accessToken": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzY29wZSI6WyJ0YXouY2xpZW50czp3cml0ZSJdLCJpc3MiOiJ0YXoiLCJleHAiOjE3NzE4NjkzNDEsImF1dGhvcml0aWVzIjpbIm1hZ2VudG8ub3JkZXIiLCJ0YXouc3lzdGVtLnVzZXIiLCJlbWFpbC5wb3N0Il0sImp0aSI6ImE1YWZkYmJkLTE4OTktNDg3ZS05YmVkLTkxNTFmODBmNjYyZCIsImNsaWVudF9pZCI6IjM1MzcxMzFfTUFHRU5UT19QT0RfU0VSVklDRSJ9.flgv5leRfMwQwD4hPpEXh1j3RM4-URQKtRxaPRZo_QNN_dej0IDVF1rtC3z8soBQJf7UIkrjs5YMk7SXuReBaIeIVxeKLPkbScuglKbESnWEpxyAf3PDrp7vXtUfZ8d5-CHTkGfkWy_ZGuFZ3neeIi0jH5rKpCHtEMAxXTLXTmIUIRCKmSMwmRHDYhBdDjKNRPUnj4IuSbCxznnfY-eZsnoQgKLr_sdRGQe4KPIKoqLNqw_K8oQ34SsI7Qfx0C_N50ivENef_lzwwRD8GG70oQzYYOndljqtbrBPdkAYG3KYULmz8tIpQCbiKFWvllRuqw2jBPKQINRApVPzVYXwsBjkGb759CNTEcra_HD0Ht2n5ARmK3UAqIN5f0V1TQIsqG2AL-OeR_DzylDvx6RYK2XFbR-i7Y-oVMNi-IJn8fK5UKQVt4wwfybi3hzBmHZybh98z1qFq3ebvlTL_Lf3mk4hAlHw631FzvBVolpM_qHjST6Wwx346ilaO2lTl7qlGbCLTWWtxuJb4MovjQfyx6TMNBTrKo6W4o-BJMAf_QyzKWas-UlTGyoK-H5ZRxzli0hChQKN2V362Ai5HZh2SL04mk79pvw0wurB5xGc-HfWilLIWzf120p2gI-IxrZeNQTGigEzyNoT4GH8P3qOyeuvP3HdeKMFmBsDW-luzb8",
+        "accessToken": "REPLACE_ACCESS_TOKEN",
         "siteName": "",
         "site": null,
         "ctcAdminFlow": false

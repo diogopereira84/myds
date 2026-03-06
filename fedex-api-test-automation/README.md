@@ -54,6 +54,9 @@ $env:ADMIN_USERNAME="<redacted>"
 $env:ADMIN_PASSWORD="<redacted>"
 $env:SANDBOX_PUBLIC_APIKEY="<redacted>"
 $env:SANDBOX_ENV_ID="<redacted>"
+$env:CONFIGURATOR_ACCESS_TOKEN="<redacted>"
+$env:AUTH_BROWSER_HEADLESS="true"
+$env:AUTH_BROWSER_SLOWMO_MS="0"
 ```
 
 ## Test Resource Provider
@@ -85,8 +88,6 @@ $env:TEST_ENV="stage3"
 $env:MIRAKL_APIKEY="<redacted>"
 $env:API_GATEWAY_CLIENT_ID="<redacted>"
 $env:MAGENTO_UI_CLIENT_ID="<redacted>"
-$env:ADMIN_USERNAME="<redacted>"
-$env:ADMIN_PASSWORD="<redacted>"
 $env:SANDBOX_PUBLIC_APIKEY="<redacted>"
 $env:SANDBOX_ENV_ID="<redacted>"
 ```

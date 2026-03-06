@@ -1,5 +1,6 @@
 package com.fedex.automation.service.fedex;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fedex.automation.constants.FedExConstants;
 import com.fedex.automation.context.TestContext;
 import io.restassured.http.ContentType;
@@ -61,7 +62,9 @@ public class DocumentService {
 
     public void convertToPrintReady() {
         String originalDocId = testContext.getOriginalDocId();
-        String payload = String.format("{\"printReadyRequest\":{\"documentId\":\"%s\",\"conversionOptions\":{\"lockContentOrientation\":false,\"minDPI\":200,\"defaultImageWidthInInches\":\"8.5\",\"defaultImageHeightInInches\":\"11\"},\"normalizationOptions\":{\"lockContentOrientation\":false,\"marginWidthInInches\":\"0\",\"targetWidthInInches\":\"\",\"targetHeightInInches\":\"\",\"targetOrientation\":\"UNKNOWN\"},\"previewURL\":true,\"expiration\":{\"units\":\"HOURS\",\"value\":24}}}", originalDocId);
+        String defaultWidth = resolveConfiguredDimension("DEFAULT_IMAGE_WIDTH", "8.5");
+        String defaultHeight = resolveConfiguredDimension("DEFAULT_IMAGE_HEIGHT", "11");
+        String payload = String.format("{\"printReadyRequest\":{\"documentId\":\"%s\",\"conversionOptions\":{\"lockContentOrientation\":false,\"minDPI\":200,\"defaultImageWidthInInches\":\"%s\",\"defaultImageHeightInInches\":\"%s\"},\"normalizationOptions\":{\"lockContentOrientation\":false,\"marginWidthInInches\":\"0\",\"targetWidthInInches\":\"\",\"targetHeightInInches\":\"\",\"targetOrientation\":\"UNKNOWN\"},\"previewURL\":true,\"expiration\":{\"units\":\"HOURS\",\"value\":24}}}", originalDocId, defaultWidth, defaultHeight);
 
         Response response = sessionService.authenticatedRequest()
                 .header(FedExConstants.HEADER_CLIENT_ID, apiGatewayClientId)
@@ -74,5 +77,25 @@ public class DocumentService {
 
         String printReadyDocId = response.jsonPath().getString("output.document.documentId");
         testContext.setPrintReadyDocId(printReadyDocId);
+    }
+
+    private String resolveConfiguredDimension(String propertyName, String fallback) {
+        JsonNode productNode = testContext.getCurrentConfiguredProductNode();
+        if (productNode == null) {
+            return fallback;
+        }
+        JsonNode properties = productNode.path("properties");
+        if (!properties.isArray()) {
+            return fallback;
+        }
+        for (JsonNode prop : properties) {
+            if (propertyName.equals(prop.path("name").asText())) {
+                String value = prop.path("value").asText();
+                if (value != null && !value.isBlank()) {
+                    return value;
+                }
+            }
+        }
+        return fallback;
     }
 }

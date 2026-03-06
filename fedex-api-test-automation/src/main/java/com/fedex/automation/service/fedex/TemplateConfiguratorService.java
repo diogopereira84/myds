@@ -73,6 +73,9 @@ public class TemplateConfiguratorService {
     @Value("${fedex.constants.value.xmlhttprequest}")
     private String valueXmlHttpRequest;
 
+    @Value("${configurator.access.token:}")
+    private String configuratorAccessToken;
+
     public void createConfiguratorSession() {
         String sku = testContext.getCurrentSku();
         String productId = testContext.getCurrentProductId();
@@ -87,6 +90,17 @@ public class TemplateConfiguratorService {
             ObjectNode payloadNode = (ObjectNode) objectMapper.readTree(is);
             ObjectNode productSelector = (ObjectNode) payloadNode.at("/configuratorSessionParameters/configuratorOptions/productSelector");
             productSelector.put("productId", sku);
+
+            ObjectNode userPreferences = (ObjectNode) payloadNode.at("/configuratorSessionParameters/configuratorOptions/userPreferences");
+            if (userPreferences != null) {
+                String currentToken = userPreferences.path("accessToken").asText("");
+                if ("REPLACE_ACCESS_TOKEN".equals(currentToken)) {
+                    if (configuratorAccessToken == null || configuratorAccessToken.isBlank()) {
+                        throw new IllegalStateException("Missing configurator access token. Set configurator.access.token (env: CONFIGURATOR_ACCESS_TOKEN).");
+                    }
+                    userPreferences.put("accessToken", configuratorAccessToken.trim());
+                }
+            }
 
             // Fetch the base structure (15 valid features) to prevent backend rule invalidation
             ObjectNode baseProductNode = (ObjectNode) payloadNode.at("/configuratorSessionParameters/configuratorOptions/product");
@@ -198,7 +212,7 @@ public class TemplateConfiguratorService {
         }
     }
 
-    public void createConfiguratorState(String templatePrefix, Map<String, String> bddFeatures) throws Exception {
+    public void createConfiguratorState(Map<String, String> bddFeatures) throws Exception {
         log.info("--- [Action] Creating Configurator State ---");
 
         ObjectNode payload = objectMapper.createObjectNode();
@@ -430,3 +444,4 @@ public class TemplateConfiguratorService {
         }
     }
 }
+

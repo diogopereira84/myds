@@ -288,10 +288,13 @@ public class CommonCheckoutSteps {
                     productTotals.path("productTaxAmount").asDouble(),
                     "Mismatch in field: taxAmount" + debugContext);
         }
-        if (expected.containsKey("totalAmount")) {
-            assertEquals(Double.parseDouble(expected.get("totalAmount")),
+        if (expected.containsKey("totalAmount") || expected.containsKey("productTotalAmount")) {
+            String expectedTotal = expected.containsKey("productTotalAmount")
+                    ? expected.get("productTotalAmount")
+                    : expected.get("totalAmount");
+            assertEquals(Double.parseDouble(expectedTotal),
                     productTotals.path("productTotalAmount").asDouble(),
-                    "Mismatch in field: totalAmount" + debugContext);
+                    "Mismatch in field: productTotalAmount" + debugContext);
         }
     }
 

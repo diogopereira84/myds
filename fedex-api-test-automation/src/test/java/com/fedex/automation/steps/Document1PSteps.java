@@ -27,7 +27,7 @@ public class Document1PSteps {
 
     @When("I search for the 1P product {string}")
     public void iSearchForThe1PProduct(String productName) {
-        log.info("--- [Call 1] Search for 1P Product: {} ---", productName);
+        log.info("--- Search for 1P Product: {} ---", productName);
         String sku = catalogService.searchProductSku(productName, "1P");
         testContext.setCurrentSku(sku);
         testContext.setSellerModel("1P");
@@ -40,7 +40,7 @@ public class Document1PSteps {
 
     @And("I fetch the Menu Hierarchy to resolve the Product ID")
     public void iFetchTheMenuHierarchy() {
-        log.info("--- [Call 3] Fetching Menu Hierarchy for Base ID: {} ---", testContext.getCurrentSku());
+        log.info("--- Fetching Menu Hierarchy for Base ID: {} ---", testContext.getCurrentSku());
         MenuHierarchyResponse.ProductMenuDetail detail = productCatalogFlowService.resolveProductMenuDetailFromSku(testContext.getCurrentSku());
 
         testContext.setCurrentProductId(detail.getProductId());
@@ -49,7 +49,7 @@ public class Document1PSteps {
 
     @And("I fetch the dynamic product details for the selected product")
     public void iFetchTheDynamicProductDetails() {
-        log.info("--- [Call 4] Fetching dynamic product details ---");
+        log.info("--- Fetching dynamic product details ---");
         StaticProductResponse response = productCatalogFlowService.getProductDetails(
                 testContext.getCurrentProductId(),
                 testContext.getCurrentProductVersion()
@@ -69,7 +69,7 @@ public class Document1PSteps {
 
     @And("I upload the document {string} to the FedEx repository")
     public void iUploadTheDocumentToTheFedExRepository(String fileName) {
-        log.info("--- [Call 7 & 8] Uploading Document: {} ---", fileName);
+        log.info("--- Uploading Document: {} ---", fileName);
         File file = new File("src/test/resources/testdata/" + fileName);
         documentService.uploadDocument(file);
         documentService.convertToPrintReady();
@@ -78,7 +78,7 @@ public class Document1PSteps {
     @And("I create the Configurator State and apply the following features:")
     public void iCreateConfiguratorState(DataTable dataTable) throws Exception {
         Map<String, String> features = dataTable.asMap(String.class, String.class);
-        templateConfiguratorService.createConfiguratorState("MultiSheet", features);
+        templateConfiguratorService.createConfiguratorState(features);
     }
 
     @And("I add {int} configured document product\\(s) to the cart")
@@ -101,35 +101,35 @@ public class Document1PSteps {
             features.remove("documentName");
             features.remove("quantity");
 
-            log.info("--- Orchestrating E2E Add to Cart for: {} (Qty: {}) ---", productName, quantity);
+            log.info("--- Orchestrating Add to Cart for: {} (Qty: {}) ---", productName, quantity);
 
-            // 1. Search
+            // Search
             String sku = catalogService.searchProductSku(productName, "1P");
             testContext.setCurrentSku(sku);
             testContext.setSellerModel("1P");
 
-            // 2. Resolve Product ID & Version Dynamically
+            // Resolve Product ID & Version Dynamically
             MenuHierarchyResponse.ProductMenuDetail detail = productCatalogFlowService.resolveProductMenuDetailFromSku(sku);
             testContext.setCurrentProductId(detail.getProductId());
             testContext.setCurrentProductVersion(detail.getVersion());
 
-            // 3. Fetch Domain Details (The Source of Truth) utilizing Version
+            // Fetch Domain Details (The Source of Truth) utilizing Version
             StaticProductResponse response = productCatalogFlowService.getProductDetails(detail.getProductId(), detail.getVersion());
             testContext.setStaticProductDetails(response.getProduct());
 
-            // 4. Create & Search Configurator Session
+            // Create & Search Configurator Session
             templateConfiguratorService.createConfiguratorSession();
             templateConfiguratorService.searchConfiguratorSession();
 
-            // 5. Upload & Process Document
+            // Upload & Process Document
             File file = new File("src/test/resources/testdata/" + documentName);
             documentService.uploadDocument(file);
             documentService.convertToPrintReady();
 
-            // 6. Create State with the dynamic features mapped from the current BDD row
-            templateConfiguratorService.createConfiguratorState("MultiSheet", features);
+            // Create State with the dynamic features mapped from the current BDD row
+            templateConfiguratorService.createConfiguratorState(features);
 
-            // 7. Add strictly to the current session Cart
+            // Add strictly to the current session Cart
             templateConfiguratorService.addConfiguredItemToCart(quantity);
 
             log.info("--- Successfully added {} to cart ---", productName);
