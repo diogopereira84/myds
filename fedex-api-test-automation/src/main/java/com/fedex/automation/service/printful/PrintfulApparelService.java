@@ -83,7 +83,7 @@ public class PrintfulApparelService {
                 .response();
     }
 
-    public boolean validateSession(String sessionId, String phpSessId, String formKey) {
+    public void validateSession(String sessionId, String phpSessId, String formKey) {
         requireNonBlank(sessionId, "sessionId");
         requireNonBlank(phpSessId, "phpSessId");
         requireNonBlank(formKey, "formKey");
@@ -113,7 +113,6 @@ public class PrintfulApparelService {
                         }
                         return isValid;
                     });
-            return true;
         } catch (ConditionTimeoutException e) {
             String message = "Session validation failed: timed out after " + printfulConfig.getRetryTimeoutSeconds() + " seconds.";
             log.error(message);
@@ -156,9 +155,6 @@ public class PrintfulApparelService {
                 .response();
     }
 
-    public Response submitApparelCheckout(PrintfulCheckoutRequest requestPayload, String phpSessId, String formKey) {
-        return submitCheckout(requestPayload, phpSessId, formKey);
-    }
 
     public S3UploadCredentialsResponse getS3UploadCredentials(String nonce, String fileName) {
         requireNonBlank(nonce, "nonce");
@@ -407,66 +403,15 @@ public class PrintfulApparelService {
         return value != null && !value.isBlank();
     }
 
-    public static final class FileUploadCallbackRequest {
-        private final String temporaryFileId;
-        private final String fileType;
-        private final long fileSize;
-        private final String fileName;
-        private final String location;
-        private final String bucket;
-        private final String key;
-        private final String etag;
-
-        public FileUploadCallbackRequest(
-                String temporaryFileId,
-                String fileType,
-                long fileSize,
-                String fileName,
-                String location,
-                String bucket,
-                String key,
-                String etag) {
-            this.temporaryFileId = temporaryFileId;
-            this.fileType = fileType;
-            this.fileSize = fileSize;
-            this.fileName = fileName;
-            this.location = location;
-            this.bucket = bucket;
-            this.key = key;
-            this.etag = etag;
-        }
-
-        public String temporaryFileId() {
-            return temporaryFileId;
-        }
-
-        public String fileType() {
-            return fileType;
-        }
-
-        public long fileSize() {
-            return fileSize;
-        }
-
-        public String fileName() {
-            return fileName;
-        }
-
-        public String location() {
-            return location;
-        }
-
-        public String bucket() {
-            return bucket;
-        }
-
-        public String key() {
-            return key;
-        }
-
-        public String etag() {
-            return etag;
-        }
+    public record FileUploadCallbackRequest(
+            String temporaryFileId,
+            String fileType,
+            long fileSize,
+            String fileName,
+            String location,
+            String bucket,
+            String key,
+            String etag) {
     }
 
     private static void validateCallbackRequest(FileUploadCallbackRequest callbackRequest) {

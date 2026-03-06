@@ -157,11 +157,24 @@ public class CheckoutApiClient {
                 .formParam(FIELD_COMPANY, form.getCompany())
                 .formParam(FIELD_IS_RESIDENCE_SHIPPING, String.valueOf(form.getIsResidenceShipping()))
                 .formParam(FIELD_SHIP_METHOD_DATA, shipMethodDataJson)
-                .formParam(FIELD_THIRD_PARTY_CARRIER_CODE, form.getThirdPartyCarrierCode())
-                .formParam(FIELD_THIRD_PARTY_METHOD_CODE, form.getThirdPartyMethodCode())
-                .formParam(FIELD_FIRST_PARTY_CARRIER_CODE, VALUE_EMPTY)
-                .formParam(FIELD_FIRST_PARTY_METHOD_CODE, VALUE_EMPTY)
-                .formParam(FIELD_LOCATION_ID, VALUE_EMPTY);
+                .formParam(FIELD_LOCATION_ID, nullSafe(form.getLocationId()));
+
+        boolean isFirstParty = hasText(form.getFirstPartyCarrierCode()) || hasText(form.getFirstPartyMethodCode());
+
+        if (isFirstParty) {
+            request
+                    .formParam(FIELD_FIRST_PARTY_CARRIER_CODE, nullSafe(form.getFirstPartyCarrierCode()))
+                    .formParam(FIELD_FIRST_PARTY_METHOD_CODE, nullSafe(form.getFirstPartyMethodCode()));
+            return;
+        }
+
+        request
+                .formParam(FIELD_THIRD_PARTY_CARRIER_CODE, nullSafe(form.getThirdPartyCarrierCode()))
+                .formParam(FIELD_THIRD_PARTY_METHOD_CODE, nullSafe(form.getThirdPartyMethodCode()));
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 
     private Response ensureSuccess(Response response, String message) {
