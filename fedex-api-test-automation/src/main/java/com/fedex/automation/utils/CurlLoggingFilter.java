@@ -59,7 +59,11 @@ public class CurlLoggingFilter implements Filter {
         for (Header header : requestSpec.getHeaders()) {
             String headerName = header.getName();
             if ("Cookie".equalsIgnoreCase(headerName)) {
-                continue; // log cookies from requestSpec.getCookies() below
+                if (requestSpec.getCookies().asList().isEmpty()) {
+                    String maskedCookieHeader = maskCookieHeader(header.getValue());
+                    curl.append(" \\\n--header 'Cookie: ").append(maskedCookieHeader).append("'");
+                }
+                continue; // log cookies from requestSpec.getCookies() below when present
             }
             String headerValue = header.getValue();
             if (isSensitiveHeader(headerName)) {
@@ -152,5 +156,31 @@ public class CurlLoggingFilter implements Filter {
 
     private boolean isPrintable(String contentType) {
         return contentType != null && (contentType.contains("json") || contentType.contains("xml") || contentType.contains("text"));
+    }
+
+    private String maskCookieHeader(String cookieHeaderValue) {
+        if (cookieHeaderValue == null || cookieHeaderValue.isBlank()) {
+            return "";
+        }
+        String[] pairs = cookieHeaderValue.split(";");
+        StringBuilder masked = new StringBuilder();
+        for (String pair : pairs) {
+            String trimmed = pair.trim();
+            if (trimmed.isEmpty()) {
+                continue;
+            }
+            int equalsIndex = trimmed.indexOf('=');
+            String name = equalsIndex > 0 ? trimmed.substring(0, equalsIndex) : trimmed;
+            String value = equalsIndex > 0 ? trimmed.substring(equalsIndex + 1) : "";
+            if (masked.length() > 0) {
+                masked.append("; ");
+            }
+            if (isSensitiveCookie(name)) {
+                masked.append(name).append("=").append(maskValue(value));
+            } else {
+                masked.append(name).append("=").append(value);
+            }
+        }
+        return masked.toString();
     }
 }

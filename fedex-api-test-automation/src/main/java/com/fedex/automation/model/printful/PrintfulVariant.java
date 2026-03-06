@@ -1,5 +1,6 @@
 package com.fedex.automation.model.printful;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -13,7 +14,8 @@ public class PrintfulVariant {
     private Integer variantId;
     private String size;
     private Integer amount;
-    private String retail_discounted_price;
+    @JsonProperty("retail_discounted_price")
+    private String retailDiscountedPrice;
     private String bulkDiscountPrice;
     private String priceDifferenceFromOriginalBulkDiscountPrice;
     private String priceDifferenceFromMainVariant;

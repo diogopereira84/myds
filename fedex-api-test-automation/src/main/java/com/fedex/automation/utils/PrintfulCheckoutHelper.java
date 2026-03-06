@@ -4,6 +4,7 @@ import com.fedex.automation.model.printful.PrintfulProductPricesResponse;
 import com.fedex.automation.model.printful.PrintfulVariant;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -34,7 +35,8 @@ public class PrintfulCheckoutHelper {
                     .findFirst()
                     .orElseThrow(() -> new IllegalStateException("Could not find technique '" + targetTechnique + "' for Variant ID: " + currentId));
 
-            BigDecimal currentPrice = new BigDecimal(techniquePriceObj.getRetailDiscountedPrice());
+            BigDecimal currentPrice = new BigDecimal(techniquePriceObj.getRetailDiscountedPrice())
+                    .setScale(2, RoundingMode.HALF_UP);
 
             // The FIRST item in the array (e.g., Size 'S') acts as the "Main Variant" for price diff calculations
             if (i == 0) {
@@ -42,16 +44,16 @@ public class PrintfulCheckoutHelper {
             }
 
             // Calculate the exact price difference (e.g. 5XL is usually more expensive than S)
-            BigDecimal diff = currentPrice.subtract(mainVariantPrice);
+            BigDecimal diff = currentPrice.subtract(mainVariantPrice).setScale(2, RoundingMode.HALF_UP);
 
             finalVariantMap.add(PrintfulVariant.builder()
                     .variantId(currentId)
                     .size(baseVariant.getSize())
                     .amount(baseVariant.getAmount())
-                    .retail_discounted_price(currentPrice.toString())
-                    .bulkDiscountPrice(currentPrice.toString())
-                    .priceDifferenceFromOriginalBulkDiscountPrice(diff.toString())
-                    .priceDifferenceFromMainVariant(diff.toString())
+                    .retailDiscountedPrice(currentPrice.toPlainString())
+                    .bulkDiscountPrice(currentPrice.toPlainString())
+                    .priceDifferenceFromOriginalBulkDiscountPrice(diff.toPlainString())
+                    .priceDifferenceFromMainVariant(diff.toPlainString())
                     .build());
         }
 

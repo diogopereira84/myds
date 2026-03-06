@@ -27,7 +27,7 @@ public final class PrintfulPayloadMapper {
                     .variantId(Integer.parseInt(row.get("variantId")))
                     .size(row.get("size"))
                     .amount(Integer.parseInt(row.get("amount")))
-                    .retail_discounted_price(price)
+                    .retailDiscountedPrice(price)
                     .bulkDiscountPrice(price)
                     .priceDifferenceFromOriginalBulkDiscountPrice("0.00")
                     .priceDifferenceFromMainVariant("0.00")
