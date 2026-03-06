@@ -24,7 +24,6 @@ import static org.junit.jupiter.api.Assertions.*;
 public class CartService {
 
     private final SessionService sessionService;
-    private final ObjectMapper mapper = new ObjectMapper();
     private final ObjectMapper objectMapper;
     private String cachedMaskedCartId;
 
@@ -188,7 +187,7 @@ public class CartService {
         assertEquals(200, response.statusCode(), "Customer section load failed with HTTP " + response.statusCode());
 
         try {
-            JsonNode rootNode = mapper.readTree(response.asString());
+            JsonNode rootNode = objectMapper.readTree(response.asString());
             JsonNode cartNode = rootNode.path("cart");
             assertFalse(cartNode.isMissingNode(), "Cart node missing in section load response");
 

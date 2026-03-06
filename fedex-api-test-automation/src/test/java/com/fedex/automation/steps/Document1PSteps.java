@@ -5,6 +5,7 @@ import com.fedex.automation.context.TestContext;
 import com.fedex.automation.model.fedex.product.MenuHierarchyResponse;
 import com.fedex.automation.model.fedex.product.StaticProductResponse;
 import com.fedex.automation.service.fedex.*;
+import com.fedex.automation.utils.TestResourceProvider;
 import io.cucumber.datatable.DataTable;
 import io.cucumber.java.en.And;
 import io.cucumber.java.en.When;
@@ -24,6 +25,7 @@ public class Document1PSteps {
     @Autowired private RateService rateService;
     @Autowired private TemplateConfiguratorService templateConfiguratorService;
     @Autowired private TestContext testContext;
+    @Autowired private TestResourceProvider testResourceProvider;
 
     @When("I search for the 1P product {string}")
     public void iSearchForThe1PProduct(String productName) {
@@ -70,7 +72,7 @@ public class Document1PSteps {
     @And("I upload the document {string} to the FedEx repository")
     public void iUploadTheDocumentToTheFedExRepository(String fileName) {
         log.info("--- Uploading Document: {} ---", fileName);
-        File file = new File("src/test/resources/testdata/" + fileName);
+        File file = testResourceProvider.loadToTempFile("testdata/" + fileName);
         documentService.uploadDocument(file);
         documentService.convertToPrintReady();
     }
@@ -122,7 +124,7 @@ public class Document1PSteps {
             templateConfiguratorService.searchConfiguratorSession();
 
             // Upload & Process Document
-            File file = new File("src/test/resources/testdata/" + documentName);
+            File file = testResourceProvider.loadToTempFile("testdata/" + documentName);
             documentService.uploadDocument(file);
             documentService.convertToPrintReady();
 
