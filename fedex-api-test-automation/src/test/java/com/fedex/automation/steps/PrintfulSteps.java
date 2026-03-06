@@ -162,14 +162,12 @@ public class PrintfulSteps {
     public void iValidateTheCustomApparelSession() {
         log.info("--- Executing Session Validation ---");
 
-        boolean isValid = printfulApparelService.validateSession(testContext.getPrintfulSessionId(),
+        printfulApparelService.validateSession(
+                testContext.getPrintfulSessionId(),
                 testContext.getPrintfulPhpSessIdCookie(),
                 testContext.getPrintfulFormKeyCookie()
         );
 
-        if (!isValid) {
-            throw new IllegalStateException("Custom Apparel session validation failed (API returned false).");
-        }
         log.info("Custom Apparel session successfully validated.");
     }
 
@@ -247,7 +245,7 @@ public class PrintfulSteps {
                 .variantMap(PrintfulPayloadMapper.mapDataTableToVariants(dataTable))
                 .build();
 
-        Response response = printfulApparelService.submitApparelCheckout(
+        Response response = printfulApparelService.submitCheckout(
                 checkoutPayload,
                 testContext.getPrintfulPhpSessIdCookie(),
                 testContext.getPrintfulFormKeyCookie()
@@ -394,7 +392,7 @@ public class PrintfulSteps {
                     .build());
         }
 
-        // 2. Fetch the Pricing API
+        // Fetch the Pricing API
         var pricingResponse = printfulApparelService.getProductPrices(
                 productId,
                 testContext.getPrintfulPhpSessIdCookie(),

@@ -7,12 +7,14 @@ import com.fedex.automation.model.fedex.*;
 import com.fedex.automation.service.fedex.*;
 import com.fedex.automation.service.mirakl.OfferService;
 import com.fedex.automation.utils.FedExEncryptionUtil;
+import com.fedex.automation.utils.ResponseValidator;
+import com.fedex.automation.utils.StepAssertions;
 import com.fedex.automation.utils.TestDataFactory;
 import io.cucumber.datatable.DataTable;
 import io.cucumber.java.en.And;
 import io.cucumber.java.en.Given;
-import io.cucumber.java.en.Then;
 import io.cucumber.java.en.When;
+import io.restassured.response.Response;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -26,35 +28,52 @@ import static org.junit.jupiter.api.Assertions.*;
 @Slf4j
 public class CommonCheckoutSteps {
 
-    @Autowired private CatalogService catalogService;
-    @Autowired private TestContext testContext;
-    @Autowired private CartService cartService;
-    @Autowired private CheckoutService checkoutService;
-    @Autowired private ObjectMapper objectMapper;
-    @Autowired private OfferService offerService;
-    @Autowired private SessionService sessionService;
-    @Autowired private ConfiguratorService configuratorService;
+    private static final String KEY_PRODUCT_NAME = "productName";
+    private static final String KEY_SELLER_MODEL = "sellerModel";
+    private static final String KEY_QUANTITY = "quantity";
+    private static final String SELLER_MODEL_3P = "3P";
+    private static final String SELLER_MODEL_1P = "1P";
+    private static final String DEFAULT_1P_PARTNER_ID = "CVAFLY1020";
+
+    @Autowired
+    private CatalogService catalogService;
+    @Autowired
+    private TestContext testContext;
+    @Autowired
+    private CartService cartService;
+    @Autowired
+    private CheckoutService checkoutService;
+    @Autowired
+    private ObjectMapper objectMapper;
+    @Autowired
+    private OfferService offerService;
+    @Autowired
+    private SessionService sessionService;
+    @Autowired
+    private ConfiguratorService configuratorService;
 
     @Given("I initialize the FedEx session")
     public void iInitializeTheFedExSession() {
         log.info("--- [Step] Initializing Session ---");
 
-        // 1. Force wipe the state to guarantee no data overlaps from previous executions
+        // Force wipe the state to guarantee no data overlaps from previous executions
         sessionService.clearSession();
 
-        // 2. Start a fresh session
+        // Start a fresh session
         sessionService.bootstrapSession();
         assertNotNull(sessionService.getFormKey(), "Form Key must be extracted");
     }
 
     @When("I search for the following products:")
     public void iSearchForTheFollowingProducts(DataTable table) {
+        StepAssertions.assertTableNotEmpty(table, "Search table must contain at least one row.");
         List<Map<String, String>> rows = table.asMaps(String.class, String.class);
         testContext.getSearchedProducts().clear();
 
         for (Map<String, String> row : rows) {
-            String productName = row.get("productName");
-            String sellerModel = row.getOrDefault("sellerModel", "3P");
+            StepAssertions.requireKeys(row, KEY_PRODUCT_NAME);
+            String productName = row.get(KEY_PRODUCT_NAME);
+            String sellerModel = row.getOrDefault(KEY_SELLER_MODEL, SELLER_MODEL_3P);
 
             log.info("--- Processing Search: {} (Model: {}) ---", productName, sellerModel);
 
@@ -66,7 +85,7 @@ public class CommonCheckoutSteps {
             itemContext.setSku(sku);
             itemContext.setSellerModel(sellerModel);
 
-            if ("3P".equalsIgnoreCase(sellerModel)) {
+            if (SELLER_MODEL_3P.equalsIgnoreCase(sellerModel)) {
                 String offerId = offerService.getOfferIdForProduct(sku);
                 itemContext.setOfferId(offerId);
             }
@@ -80,11 +99,13 @@ public class CommonCheckoutSteps {
 
     @And("I add the following products to the cart:")
     public void iAddTheFollowingProductsToTheCart(DataTable table) {
+        StepAssertions.assertTableNotEmpty(table, "Cart add table must contain at least one row.");
         List<Map<String, String>> rows = table.asMaps(String.class, String.class);
 
         for (Map<String, String> row : rows) {
-            String productName = row.get("productName");
-            String quantity = row.get("quantity");
+            StepAssertions.requireKeys(row, KEY_PRODUCT_NAME, KEY_QUANTITY);
+            String productName = row.get(KEY_PRODUCT_NAME);
+            int quantity = StepAssertions.parsePositiveInt(row.get(KEY_QUANTITY), "quantity");
 
             TestContext.ProductItemContext item = testContext.getSearchedProducts().stream()
                     .filter(p -> p.getProductName().equalsIgnoreCase(productName))
@@ -93,22 +114,18 @@ public class CommonCheckoutSteps {
 
             log.info("--- Adding Item to Cart: {} (Qty: {}, Model: {}) ---", productName, quantity, item.getSellerModel());
 
-            if ("1P".equalsIgnoreCase(item.getSellerModel())) {
-                String partnerId = resolve1PPartnerId(productName);
-                configuratorService.add1PConfiguredItemToCart(item.getSku(), partnerId, Integer.parseInt(quantity));
+            if (SELLER_MODEL_1P.equalsIgnoreCase(item.getSellerModel())) {
+                String partnerId = resolve1PPartnerId();
+                Response response = configuratorService.add1PConfiguredItemToCart(item.getSku(), partnerId, quantity);
+                ResponseValidator.assertOk(response, "Configurator add-to-cart failed");
             } else {
-                cartService.addToCart(item.getSku(), quantity, item.getOfferId());
+                cartService.addToCart(item.getSku(), String.valueOf(quantity), item.getOfferId());
             }
         }
     }
 
-    private String resolve1PPartnerId(String productName) {
-        return "CVAFLY1020";
-    }
-
-    @Then("I check the cart html")
-    public void iCheckTheCartHtml() {
-        cartService.checkCart();
+    private String resolve1PPartnerId() {
+        return DEFAULT_1P_PARTNER_ID;
     }
 
     @And("I scrape the cart context data")
@@ -123,17 +140,19 @@ public class CommonCheckoutSteps {
         }
     }
 
-    @io.cucumber.java.en.And("I provide the shipping address:")
+    @And("I provide the shipping address:")
     public void iProvideTheShippingAddress(io.cucumber.datatable.DataTable dataTable) {
+        StepAssertions.assertTableNotEmpty(dataTable, "Shipping address table must contain at least one row.");
         List<Map<String, String>> rows = dataTable.asMaps(String.class, String.class);
-        testContext.setShippingAddress(rows.getFirst());
+        testContext.setShippingAddress(rows.get(0));
         log.info("Injected Shipping Address: {}", testContext.getShippingAddress().get("city"));
     }
 
-    @io.cucumber.java.en.And("I provide the payment details:")
+    @And("I provide the payment details:")
     public void iProvideThePaymentDetails(io.cucumber.datatable.DataTable dataTable) {
+        StepAssertions.assertTableNotEmpty(dataTable, "Payment details table must contain at least one row.");
         List<Map<String, String>> rows = dataTable.asMaps(String.class, String.class);
-        testContext.setPaymentDetails(rows.getFirst());
+        testContext.setPaymentDetails(rows.get(0));
 
         // Safety check to prevent substring exceptions if card is too short
         String maskedCard = testContext.getPaymentDetails().get("cardNumber");
@@ -146,6 +165,7 @@ public class CommonCheckoutSteps {
     @And("I estimate shipping methods and select {string}")
     public void iEstimateShippingMethodsAndSelect(String methodCode) {
         CartContext cartData = testContext.getCartData();
+        assertNotNull(cartData, "Cart context is missing. Ensure cart context was scraped.");
         String quoteIdToUse = isNullOrEmpty(cartData.getMaskedQuoteId()) ? cartData.getQuoteId() : cartData.getMaskedQuoteId();
 
         if (isNullOrEmpty(quoteIdToUse)) throw new RuntimeException("Cannot Estimate Shipping: IDs missing.");
@@ -153,8 +173,13 @@ public class CommonCheckoutSteps {
         log.info("--- [Step] Estimating Shipping for Quote: {} ---", quoteIdToUse);
 
         EstimateShippingRequest request = TestDataFactory.createEstimateRequest(testContext.getShippingAddress());
-        EstimateShipMethodResponse[] methods = checkoutService.estimateShipping(quoteIdToUse, request);
+        Response response = checkoutService.estimateShippingResponse(quoteIdToUse, request);
+        ResponseValidator.assertOk(response, "Estimate shipping failed");
+        EstimateShipMethodResponse[] methods = response.as(EstimateShipMethodResponse[].class);
         assertNotNull(methods, "Shipping methods API returned null");
+        if (methods.length == 0) {
+            fail("Shipping methods API returned empty list.");
+        }
 
         EstimateShipMethodResponse selected = null;
         for (EstimateShipMethodResponse m : methods) {
@@ -165,7 +190,8 @@ public class CommonCheckoutSteps {
         }
 
         if (selected == null) {
-            selected = methods[0];
+            fail("Requested shipping method '" + methodCode + "' was not returned by estimate API.");
+            return;
         }
 
         log.info("SELECTED METHOD: {} (Amount: {})", selected.getMethodCode(), selected.getAmount());
@@ -174,22 +200,35 @@ public class CommonCheckoutSteps {
 
     @And("I retrieve the delivery rate")
     public void iRetrieveTheDeliveryRate() {
-        String sellerModel = testContext.getSellerModel() != null ? testContext.getSellerModel() : "3P";
+        String sellerModel = testContext.getSellerModel() != null ? testContext.getSellerModel() : SELLER_MODEL_3P;
         log.info("Retrieving Delivery Rate (Model: {})", sellerModel);
 
+        assertNotNull(testContext.getSelectedShippingMethod(), "Selected shipping method is missing.");
+        assertNotNull(testContext.getShippingAddress(), "Shipping address is missing.");
         DeliveryRateRequestForm form = TestDataFactory.createRateForm(testContext.getSelectedShippingMethod(), sellerModel, testContext.getShippingAddress());
-        JsonNode response = checkoutService.getDeliveryRate(form);
-        testContext.setRateResponse(response);
+        Response response = checkoutService.getDeliveryRateResponse(form);
+        ResponseValidator.assertOk(response, "Delivery rate request failed");
+        try {
+            JsonNode responseNode = objectMapper.readTree(response.asString());
+            testContext.setRateResponse(responseNode);
+        } catch (Exception e) {
+            throw new IllegalStateException("Error parsing delivery rate response.", e);
+        }
     }
 
     @And("I create a quote")
     public void iCreateAQuote() {
-        checkoutService.createQuote(TestDataFactory.buildQuotePayload(testContext.getRateResponse(), testContext.getSelectedShippingMethod(), testContext.getShippingAddress()));
+        assertNotNull(testContext.getRateResponse(), "Rate response is missing.");
+        assertNotNull(testContext.getSelectedShippingMethod(), "Selected shipping method is missing.");
+        assertNotNull(testContext.getShippingAddress(), "Shipping address is missing.");
+        Response response = checkoutService.createQuoteResponse(TestDataFactory.buildQuotePayload(testContext.getRateResponse(), testContext.getSelectedShippingMethod(), testContext.getShippingAddress()));
+        ResponseValidator.assertOk(response, "Create quote failed");
     }
 
     @And("I validate the pay rate API")
     public void iValidateThePayRateAPI() {
-        checkoutService.callPayRate();
+        Response response = checkoutService.callPayRateResponse();
+        ResponseValidator.assertOk(response, "Pay rate request failed");
     }
 
     @And("I submit the order using a secure credit card")
@@ -197,7 +236,11 @@ public class CommonCheckoutSteps {
         log.info("--- [Step] Submit Order ---");
 
         Map<String, String> paymentInfo = testContext.getPaymentDetails();
+        assertNotNull(paymentInfo, "Payment details are missing.");
+        CartContext cartData = testContext.getCartData();
+        assertNotNull(cartData, "Cart context is missing. Ensure cart context was scraped.");
         String publicKey = checkoutService.fetchEncryptionKey();
+        assertNotNull(publicKey, "Encryption key is missing.");
 
         String encryptedCard = FedExEncryptionUtil.encryptCreditCard(
                 paymentInfo.get("cardNumber"), paymentInfo.get("expMonth"), paymentInfo.get("expYear"), paymentInfo.get("cvv"), publicKey
@@ -205,7 +248,10 @@ public class CommonCheckoutSteps {
         String rawEncrypted = URLDecoder.decode(encryptedCard, StandardCharsets.UTF_8);
 
         SubmitOrderRequest orderRequest = TestDataFactory.createOrderRequest(rawEncrypted, paymentInfo, testContext.getShippingAddress());
-        String responseBody = checkoutService.submitOrder(orderRequest, testContext.getCartData().getQuoteId());
+        String quoteIdToUse = resolveQuoteId(cartData);
+        Response response = checkoutService.submitOrderResponse(orderRequest, quoteIdToUse);
+        ResponseValidator.assertOk(response, "Submit order failed");
+        String responseBody = response.asString();
 
         JsonNode rootNode = objectMapper.readTree(responseBody);
 
@@ -245,7 +291,6 @@ public class CommonCheckoutSteps {
         log.info("VERIFIED: Order Number '{}' is present.", testContext.getPlacedOrderNumber());
     }
 
-    // --- BDD Verification Steps (Unchanged from existing logic, checks remain functional) ---
     @And("I verify the order contact details:")
     public void iVerifyTheOrderContactDetails(DataTable dataTable) {
         verifyCheckoutDetailsExist();
@@ -272,7 +317,7 @@ public class CommonCheckoutSteps {
     public void iVerifyTheOrderTotalsAndTaxation(DataTable dataTable) {
         verifyCheckoutDetailsExist();
         JsonNode lineItemContainer = getFirstLineItemContainer();
-        JsonNode productTotals = lineItemContainer.path("deliveryLines").get(0).path("productTotals");
+        JsonNode productTotals = getFirstDeliveryLine(lineItemContainer).path("productTotals");
         Map<String, String> expected = dataTable.asMap(String.class, String.class);
 
         // Debug context to immediately show what the API returned upon failure
@@ -288,10 +333,13 @@ public class CommonCheckoutSteps {
                     productTotals.path("productTaxAmount").asDouble(),
                     "Mismatch in field: taxAmount" + debugContext);
         }
-        if (expected.containsKey("totalAmount")) {
-            assertEquals(Double.parseDouble(expected.get("totalAmount")),
+        if (expected.containsKey("totalAmount") || expected.containsKey("productTotalAmount")) {
+            String expectedTotal = expected.containsKey("productTotalAmount")
+                    ? expected.get("productTotalAmount")
+                    : expected.get("totalAmount");
+            assertEquals(Double.parseDouble(expectedTotal),
                     productTotals.path("productTotalAmount").asDouble(),
-                    "Mismatch in field: totalAmount" + debugContext);
+                    "Mismatch in field: productTotalAmount" + debugContext);
         }
     }
 
@@ -320,49 +368,6 @@ public class CommonCheckoutSteps {
         }
     }
 
-    @And("I verify the unified data layer:")
-    public void iVerifyTheUnifiedDataLayer(DataTable dataTable) {
-        if (testContext.getUnifiedDataLayer() == null) fail("Unified Data Layer is null.");
-        JsonNode udl = testContext.getUnifiedDataLayer();
-        Map<String, String> expected = dataTable.asMap(String.class, String.class);
-
-        expected.forEach((key, value) -> {
-            if (udl.has(key)) assertEquals(value, udl.path(key).asText(), "Mismatch for key: " + key);
-            else fail("Unified Data Layer missing key: " + key);
-        });
-    }
-
-    @And("I verify the order totals:")
-    public void iVerifyTheOrderTotals(DataTable dataTable) {
-        verifyCheckoutDetailsExist();
-        JsonNode transactionTotals = testContext.getCheckoutDetails().path("transactionTotals");
-        Map<String, String> expected = dataTable.asMap(String.class, String.class);
-
-        // Debug context to immediately show what the API returned upon failure
-        String debugContext = "\nActual JSON returned by API: " + transactionTotals.toPrettyString();
-
-        if (expected.containsKey("grossAmount")) {
-            assertEquals(Double.parseDouble(expected.get("grossAmount")),
-                    transactionTotals.path("grossAmount").asDouble(),
-                    "Mismatch in field: grossAmount" + debugContext);
-        }
-        if (expected.containsKey("netAmount")) {
-            assertEquals(Double.parseDouble(expected.get("netAmount")),
-                    transactionTotals.path("netAmount").asDouble(),
-                    "Mismatch in field: netAmount" + debugContext);
-        }
-        if (expected.containsKey("taxAmount")) {
-            assertEquals(Double.parseDouble(expected.get("taxAmount")),
-                    transactionTotals.path("taxAmount").asDouble(),
-                    "Mismatch in field: taxAmount" + debugContext);
-        }
-        if (expected.containsKey("totalAmount")) {
-            assertEquals(Double.parseDouble(expected.get("totalAmount")),
-                    transactionTotals.path("totalAmount").asDouble(),
-                    "Mismatch in field: totalAmount" + debugContext);
-        }
-    }
-
     private JsonNode getFirstLineItemContainer() {
         JsonNode lineItems = testContext.getCheckoutDetails().path("lineItems");
         if (lineItems.isEmpty()) fail("Verification Failed: 'lineItems' array is empty.");
@@ -371,6 +376,22 @@ public class CommonCheckoutSteps {
             return firstItem.path("retailPrintOrderDetails").get(0);
         }
         return firstItem;
+    }
+
+    private JsonNode getFirstDeliveryLine(JsonNode lineItemContainer) {
+        JsonNode deliveryLines = lineItemContainer.path("deliveryLines");
+        if (deliveryLines.isMissingNode() || !deliveryLines.isArray() || deliveryLines.isEmpty()) {
+            fail("Verification Failed: 'deliveryLines' array is missing or empty.");
+        }
+        return deliveryLines.get(0);
+    }
+
+    private String resolveQuoteId(CartContext cartData) {
+        String quoteId = isNullOrEmpty(cartData.getMaskedQuoteId()) ? cartData.getQuoteId() : cartData.getMaskedQuoteId();
+        if (isNullOrEmpty(quoteId)) {
+            throw new IllegalStateException("Cannot submit order: both quoteId and maskedQuoteId are missing.");
+        }
+        return quoteId;
     }
 
     private void verifyCheckoutDetailsExist() {

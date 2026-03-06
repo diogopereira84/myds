@@ -17,6 +17,12 @@ public class AuthenticationService {
     @Value("${endpoint.auth.secure-login}")
     private String loginPageUrl;
 
+    @Value("${auth.browser.headless:true}")
+    private boolean headless;
+
+    @Value("${auth.browser.slowmo.ms:0}")
+    private int slowMoMs;
+
     public Map<String, String> login(String username, String password, Map<String, String> initialCookies) {
         log.info("Starting Browser-based Auth Flow at: {}", loginPageUrl);
 
@@ -29,9 +35,9 @@ public class AuthenticationService {
         try (Playwright playwright = Playwright.create()) {
 
             BrowserType.LaunchOptions options = new BrowserType.LaunchOptions()
-                    .setHeadless(false)
+                    .setHeadless(headless)
                     .setArgs(launchArgs)
-                    .setSlowMo(100);
+                    .setSlowMo(slowMoMs);
 
             log.info("Launching browser with args: {}", launchArgs);
             Browser browser = playwright.chromium().launch(options);
@@ -41,6 +47,10 @@ public class AuthenticationService {
                     .setViewportSize(null);
 
             BrowserContext context = browser.newContext(contextOptions);
+            if (initialCookies != null && !initialCookies.isEmpty()) {
+                context.addCookies(toPlaywrightCookies(initialCookies));
+                log.info("Seeded {} initial cookies into browser context.", initialCookies.size());
+            }
             Page page = context.newPage();
 
             log.info("Navigating to login page...");
@@ -85,6 +95,14 @@ public class AuthenticationService {
         }
 
         return restAssuredCookies;
+    }
+
+    private List<Cookie> toPlaywrightCookies(Map<String, String> initialCookies) {
+        return initialCookies.entrySet().stream()
+                .map(entry -> new Cookie(entry.getKey(), entry.getValue())
+                        .setUrl(loginPageUrl)
+                        .setPath("/"))
+                .toList();
     }
 
     private void handleCookieConsent(Page page) {

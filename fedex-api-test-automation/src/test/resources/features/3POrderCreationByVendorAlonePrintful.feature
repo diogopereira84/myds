@@ -1,5 +1,6 @@
 Feature: Printful 3P Order Creation by Vendor Alone - Product Checkout Flow
 
+  @Regression
   Scenario: 3P Order Creation by Vendor Alone Printful Single Item Order
     Given I initialize the FedEx session
     And I search for the following PRINTFUL products:

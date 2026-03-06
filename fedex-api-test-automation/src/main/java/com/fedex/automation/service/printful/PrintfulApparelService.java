@@ -2,7 +2,12 @@ package com.fedex.automation.service.printful;
 
 import com.fedex.automation.config.FedexConfig;
 import com.fedex.automation.config.PrintfulConfig;
-import com.fedex.automation.model.printful.*;
+import com.fedex.automation.model.printful.AuthNonceResponse;
+import com.fedex.automation.model.printful.PrintfulCatalogResponse;
+import com.fedex.automation.model.printful.PrintfulCatalogVariantsResponse;
+import com.fedex.automation.model.printful.PrintfulCheckoutRequest;
+import com.fedex.automation.model.printful.PrintfulProductPricesResponse;
+import com.fedex.automation.model.printful.S3UploadCredentialsResponse;
 import io.restassured.response.Response;
 import io.restassured.specification.RequestSpecification;
 import lombok.RequiredArgsConstructor;
@@ -11,6 +16,7 @@ import org.awaitility.Awaitility;
 import org.awaitility.core.ConditionTimeoutException;
 import org.springframework.stereotype.Service;
 
+import java.io.File;
 import java.time.Duration;
 
 import static io.restassured.RestAssured.given;
@@ -20,12 +26,35 @@ import static io.restassured.RestAssured.given;
 @RequiredArgsConstructor
 public class PrintfulApparelService {
 
+    private static final String HEADER_ACCEPT = "Accept";
+    private static final String HEADER_CONTENT_TYPE = "Content-Type";
+    private static final String HEADER_AUTHORIZATION = "Authorization";
+    private static final String HEADER_X_REQUESTED_WITH = "X-Requested-With";
+    private static final String CONTENT_TYPE_JSON = "application/json";
+    private static final String CONTENT_TYPE_FORM = "application/x-www-form-urlencoded; charset=UTF-8";
+    private static final String COOKIE_PHP_SESSION_ID = "PHPSESSID";
+    private static final String COOKIE_FORM_KEY = "form_key";
+    private static final String PATH_FILE_LIBRARY_UPLOAD = "/rpc/embedded-designer-rpc/file-library-upload";
+    private static final String PATH_FILE_LIBRARY_UPLOAD_CALLBACK = "/rpc/embedded-designer-rpc/file-library-upload-callback";
+    private static final String PATH_FILE_LIBRARY_GET_UPLOADED_FILE = "/rpc/embedded-designer-rpc/file-library-get-uploaded-file";
+    private static final String PATH_CATALOG_PRODUCTS = "/v2/catalog-products";
+    private static final String PATH_PRODUCT_PRICES = "/api/catalog/product-prices/";
+
     private final RequestSpecification defaultRequestSpec;
     private final PrintfulConfig printfulConfig;
     private final FedexConfig fedexConfig;
 
     public Response executePunchout(String sku, String offerId, String shopSku) {
-        String punchoutPath = String.format("/default/marketplacepunchout/index/index/sku/%s/offer_id/%s/seller_sku/%s/", sku, offerId, shopSku);
+        requireNonBlank(sku, "sku");
+        requireNonBlank(offerId, "offerId");
+        requireNonBlank(shopSku, "shopSku");
+
+        String punchoutPath = String.format(
+                "/default/marketplacepunchout/index/index/sku/%s/offer_id/%s/seller_sku/%s/",
+                sku,
+                offerId,
+                shopSku
+        );
         log.info("Executing Printful Punchout GET to: {}{}", fedexConfig.getBaseUrl(), punchoutPath);
 
         return given()
@@ -40,12 +69,12 @@ public class PrintfulApparelService {
     }
 
     public Response followRedirect(String targetUrl, String phpSessId) {
+        requireNonBlank(targetUrl, "targetUrl");
         log.info("Manually following punchout redirect to: {}", targetUrl);
 
-        var request = given().spec(defaultRequestSpec);
-
-        if (phpSessId != null) {
-            request.cookie("PHPSESSID", phpSessId);
+        RequestSpecification request = given().spec(defaultRequestSpec);
+        if (hasText(phpSessId)) {
+            request.cookie(COOKIE_PHP_SESSION_ID, phpSessId);
         }
 
         return request.get(targetUrl)
@@ -54,64 +83,49 @@ public class PrintfulApparelService {
                 .response();
     }
 
+    public void validateSession(String sessionId, String phpSessId, String formKey) {
+        requireNonBlank(sessionId, "sessionId");
+        requireNonBlank(phpSessId, "phpSessId");
+        requireNonBlank(formKey, "formKey");
 
-    public boolean validateSession(String sessionId, String phpSessId, String formKey) {
         log.info("--- Validating Custom Apparel Session for Session ID: {} (with Awaitility Polling) ---", sessionId);
         String requestBody = String.format("{\"sessionId\":\"%s\"}", sessionId);
 
         try {
-            // Awaitility will execute the code inside until() until it returns true,
-            // or until the timeout is reached.
             Awaitility.await()
                     .atMost(Duration.ofSeconds(printfulConfig.getRetryTimeoutSeconds()))
                     .pollInterval(Duration.ofSeconds(printfulConfig.getRetryIntervalSeconds()))
                     .until(() -> {
                         log.info("Polling Custom Apparel Session Validation API...");
 
-                        Response response = given()
-                                .spec(defaultRequestSpec)
-                                .baseUri(printfulConfig.getCustomApparelBaseUrl())
-                                .header("Accept", "application/json")
-                                .header("Content-Type", "application/json")
-                                .cookie("PHPSESSID", phpSessId)
-                                .cookie("form_key", formKey)
+                        Response response = customApparelJsonRequest(phpSessId, formKey)
                                 .body(requestBody)
                                 .post(printfulConfig.getValidateSessionEndpoint());
 
-                        // If the third party returns a 5xx or 4xx, we don't crash, we just tell Awaitility to retry
                         if (response.statusCode() != 200) {
                             log.warn("Received HTTP {} from validation API. Retrying...", response.statusCode());
                             return false;
                         }
 
-                        // Check if the body actually says "true"
                         boolean isValid = Boolean.parseBoolean(response.asString().trim());
                         if (!isValid) {
                             log.warn("Session returned false. It may still be generating. Retrying...");
                         }
-
                         return isValid;
                     });
-
-            // If Awaitility finishes without throwing an exception, it successfully returned true!
-            return true;
-
         } catch (ConditionTimeoutException e) {
-            log.error("Session validation failed: Timed out after {} seconds of retrying.", printfulConfig.getRetryTimeoutSeconds());
-            return false;
+            String message = "Session validation failed: timed out after " + printfulConfig.getRetryTimeoutSeconds() + " seconds.";
+            log.error(message);
+            throw new IllegalStateException(message, e);
         }
     }
 
     public AuthNonceResponse generateNonce(String phpSessId, String formKey) {
+        requireNonBlank(phpSessId, "phpSessId");
+        requireNonBlank(formKey, "formKey");
         log.info("--- Generating Auth Nonce ---");
 
-        Response response = given()
-                .spec(defaultRequestSpec)
-                .baseUri(printfulConfig.getCustomApparelBaseUrl())
-                .header("Accept", "application/json")
-                .header("Content-Type", "application/json")
-                .cookie("PHPSESSID", phpSessId)
-                .cookie("form_key", formKey)
+        Response response = customApparelJsonRequest(phpSessId, formKey)
                 .body("{}")
                 .post(printfulConfig.getGenerateNonceEndpoint())
                 .then()
@@ -121,63 +135,52 @@ public class PrintfulApparelService {
 
         return response.as(AuthNonceResponse.class);
     }
+
     public Response uploadDesignAsset(String sessionId, String phpSessId, String formKey) {
+        requireNonBlank(sessionId, "sessionId");
+        requireNonBlank(phpSessId, "phpSessId");
+        requireNonBlank(formKey, "formKey");
         log.info("--- Simulating Asset Upload for Session: {} ---", sessionId);
 
-        return given()
-                .spec(defaultRequestSpec)
-                .baseUri(printfulConfig.getCustomApparelBaseUrl())
-                .header("Accept", "application/json")
-                .header("X-Requested-With", "XMLHttpRequest")
-                .cookie("PHPSESSID", phpSessId)
-                .cookie("form_key", formKey)
+        return customApparelCookieRequest(phpSessId, formKey)
+                .header(HEADER_ACCEPT, CONTENT_TYPE_JSON)
+                .header(HEADER_X_REQUESTED_WITH, "XMLHttpRequest")
                 .formParam("uploadType", "embedded-designer")
                 .formParam("fileName", "random.jpg")
                 .queryParam("session_id", sessionId)
-                .post("/rpc/embedded-designer-rpc/file-library-upload")
+                .post(PATH_FILE_LIBRARY_UPLOAD)
                 .then()
                 .statusCode(200)
                 .extract()
                 .response();
     }
 
-    public Response submitApparelCheckout(PrintfulCheckoutRequest requestPayload, String phpSessId, String formKey) {
-        log.info("--- Submitting Printful Custom Apparel Checkout ---");
-
-        return given()
-                .spec(defaultRequestSpec)
-                .baseUri(printfulConfig.getCustomApparelBaseUrl())
-                .header("Accept", "application/json")
-                .header("Content-Type", "application/json")
-                .cookie("PHPSESSID", phpSessId)
-                .cookie("form_key", formKey)
-                .body(requestPayload)
-                .post(printfulConfig.getOrderCheckoutEndpoint())
-                .then()
-                .statusCode(200)
-                .extract()
-                .response();
-    }
 
     public S3UploadCredentialsResponse getS3UploadCredentials(String nonce, String fileName) {
+        requireNonBlank(nonce, "nonce");
+        requireNonBlank(fileName, "fileName");
         log.info("--- Requesting Printful S3 Upload Credentials ---");
-        return given()
-                .spec(defaultRequestSpec)
-                .baseUri(printfulConfig.getPrintfulWebBaseUrl())
-                .header("Authorization", "Bearer " + nonce)
-                .contentType("application/x-www-form-urlencoded; charset=UTF-8") // Added Content-Type
-                .formParam("uploadType", "embedded-designer") // Added payload body
+
+        return printfulWebBearerFormRequest(nonce)
+                .formParam("uploadType", "embedded-designer")
                 .formParam("fileName", fileName)
-                .post("/rpc/embedded-designer-rpc/file-library-upload")
+                .post(PATH_FILE_LIBRARY_UPLOAD)
                 .then()
                 .statusCode(200)
                 .extract()
                 .as(S3UploadCredentialsResponse.class);
     }
 
-    public Response uploadFileToS3(S3UploadCredentialsResponse.S3Credentials creds, java.io.File file) {
+    public Response uploadFileToS3(S3UploadCredentialsResponse.S3Credentials creds, File file) {
+        if (creds == null) {
+            throw new IllegalArgumentException("creds must not be null");
+        }
+        if (file == null || !file.exists()) {
+            throw new IllegalArgumentException("file must exist before S3 upload");
+        }
+
         log.info("--- Uploading File to S3 Bucket ---");
-        var request = given()
+        RequestSpecification request = given()
                 .spec(defaultRequestSpec)
                 .baseUri(printfulConfig.getPrintfulS3Url())
                 .multiPart("success_action_status", creds.getSuccessActionStatus())
@@ -189,7 +192,7 @@ public class PrintfulApparelService {
                 .multiPart("Policy", creds.getPolicy());
 
         String signature = creds.getXAmzSignature();
-        if (signature != null && !signature.isBlank()) {
+        if (hasText(signature)) {
             request.multiPart("X-Amz-Signature", signature);
         }
 
@@ -197,7 +200,32 @@ public class PrintfulApparelService {
                 .multiPart("file", file)
                 .post()
                 .then()
-                .statusCode(201) // AWS S3 returns 201 Created on success
+                .statusCode(201)
+                .extract()
+                .response();
+    }
+
+    public Response fileLibraryUploadCallback(String nonce, FileUploadCallbackRequest callbackRequest) {
+        requireNonBlank(nonce, "nonce");
+        if (callbackRequest == null) {
+            throw new IllegalArgumentException("callbackRequest must not be null");
+        }
+        validateCallbackRequest(callbackRequest);
+
+        log.info("--- Printful File Upload Callback ---");
+
+        return printfulWebBearerFormRequest(nonce)
+                .formParam("temporaryFileId", callbackRequest.temporaryFileId())
+                .formParam("file[type]", callbackRequest.fileType())
+                .formParam("file[size]", String.valueOf(callbackRequest.fileSize()))
+                .formParam("file[filename]", callbackRequest.fileName())
+                .formParam("location", callbackRequest.location())
+                .formParam("bucket", callbackRequest.bucket())
+                .formParam("key", callbackRequest.key())
+                .formParam("etag", callbackRequest.etag())
+                .post(PATH_FILE_LIBRARY_UPLOAD_CALLBACK)
+                .then()
+                .statusCode(200)
                 .extract()
                 .response();
     }
@@ -213,29 +241,24 @@ public class PrintfulApparelService {
             String key,
             String etag) {
 
-        log.info("--- Printful File Upload Callback ---");
+        FileUploadCallbackRequest callbackRequest = new FileUploadCallbackRequest(
+                temporaryFileId,
+                fileType,
+                fileSize,
+                fileName,
+                location,
+                bucket,
+                key,
+                etag
+        );
 
-        return given()
-                .spec(defaultRequestSpec)
-                .baseUri(printfulConfig.getPrintfulWebBaseUrl())
-                .header("Authorization", "Bearer " + nonce)
-                .contentType("application/x-www-form-urlencoded; charset=UTF-8")
-                .formParam("temporaryFileId", temporaryFileId)
-                .formParam("file[type]", fileType)
-                .formParam("file[size]", String.valueOf(fileSize))
-                .formParam("file[filename]", fileName)
-                .formParam("location", location)
-                .formParam("bucket", bucket)
-                .formParam("key", key)
-                .formParam("etag", etag)
-                .post("/rpc/embedded-designer-rpc/file-library-upload-callback")
-                .then()
-                .statusCode(200)
-                .extract()
-                .response();
+        return fileLibraryUploadCallback(nonce, callbackRequest);
     }
 
     public void fileLibraryGetUploadedFile(String nonce, String temporaryFileKey) {
+        requireNonBlank(nonce, "nonce");
+        requireNonBlank(temporaryFileKey, "temporaryFileKey");
+
         log.info("--- Verifying Uploaded File in Printful Library (with Awaitility Polling) ---");
         String requestBody = String.format("{\"temporaryFileKey\":\"%s\"}", temporaryFileKey);
 
@@ -246,20 +269,15 @@ public class PrintfulApparelService {
                     .until(() -> {
                         log.info("Polling Printful File Library for temporaryFileKey: {}...", temporaryFileKey);
 
-                        Response response = given()
-                                .spec(defaultRequestSpec)
-                                .baseUri(printfulConfig.getPrintfulWebBaseUrl())
-                                .header("Authorization", "Bearer " + nonce)
-                                .contentType("application/json")
+                        Response response = printfulWebBearerJsonRequest(nonce)
                                 .body(requestBody)
-                                .post("/rpc/embedded-designer-rpc/file-library-get-uploaded-file");
+                                .post(PATH_FILE_LIBRARY_GET_UPLOADED_FILE);
 
                         if (response.statusCode() != 200) {
                             log.warn("Received HTTP {} from file verification API. Retrying...", response.statusCode());
                             return false;
                         }
 
-                        // Parse the JSON. If Printful is still processing, it returns {"result": {"success": 0}}
                         Integer successFlag = response.jsonPath().get("result.success");
                         if (successFlag != null && successFlag == 0) {
                             log.warn("Printful is still processing the file (success: 0). Retrying...");
@@ -278,15 +296,12 @@ public class PrintfulApparelService {
     }
 
     public PrintfulCatalogResponse getCatalogProducts(String categoryId) {
+        requireNonBlank(categoryId, "categoryId");
         log.info("--- Fetching Printful Catalog Products for Category ID: {} ---", categoryId);
 
-        return given()
-                .spec(defaultRequestSpec) // <--- THIS triggers your framework's CurlLoggingFilter
-                .baseUri(printfulConfig.getPrintfulApiBaseUrl())
-                .header("Authorization", "Bearer " + printfulConfig.getPrintfulApiToken())
-                .header("X-PF-Store-ID", printfulConfig.getPrintfulStoreId())
+        return printfulApiRequest()
                 .queryParam("category_ids", categoryId)
-                .get("/v2/catalog-products")
+                .get(PATH_CATALOG_PRODUCTS)
                 .then()
                 .statusCode(200)
                 .extract()
@@ -294,15 +309,12 @@ public class PrintfulApparelService {
     }
 
     public PrintfulCatalogVariantsResponse getCatalogVariants(String productId) {
+        requireNonBlank(productId, "productId");
         log.info("--- Fetching Printful Catalog Variants for Product ID: {} ---", productId);
 
-        return given()
-                .spec(defaultRequestSpec)
-                .baseUri(printfulConfig.getPrintfulApiBaseUrl()) // Targets API host from config
-                .header("Authorization", "Bearer " + printfulConfig.getPrintfulApiToken())
-                .header("X-PF-Store-ID", printfulConfig.getPrintfulStoreId())
+        return printfulApiRequest()
                 .queryParam("limit", 100)
-                .get("/v2/catalog-products/" + productId + "/catalog-variants")
+                .get(PATH_CATALOG_PRODUCTS + "/" + productId + "/catalog-variants")
                 .then()
                 .statusCode(200)
                 .extract()
@@ -310,15 +322,15 @@ public class PrintfulApparelService {
     }
 
     public PrintfulProductPricesResponse getProductPrices(String productId, String phpSessId, String formKey) {
+        requireNonBlank(productId, "productId");
+        requireNonBlank(phpSessId, "phpSessId");
+        requireNonBlank(formKey, "formKey");
+
         log.info("--- Fetching Printful Product Prices for Product ID: {} ---", productId);
 
-        return given()
-                .spec(defaultRequestSpec)
-                .baseUri(printfulConfig.getCustomApparelBaseUrl())
-                .cookie("PHPSESSID", phpSessId)
-                .cookie("form_key", formKey)
+        return customApparelCookieRequest(phpSessId, formKey)
                 .queryParam("productId", productId)
-                .get("/api/catalog/product-prices/")
+                .get(PATH_PRODUCT_PRICES)
                 .then()
                 .statusCode(200)
                 .extract()
@@ -326,20 +338,92 @@ public class PrintfulApparelService {
     }
 
     public Response submitCheckout(PrintfulCheckoutRequest checkoutPayload, String phpSessId, String formKey) {
+        if (checkoutPayload == null) {
+            throw new IllegalArgumentException("checkoutPayload must not be null");
+        }
+        requireNonBlank(phpSessId, "phpSessId");
+        requireNonBlank(formKey, "formKey");
+
         log.info("--- Submitting Printful Custom Apparel Checkout ---");
 
-        return given()
-                .spec(defaultRequestSpec)
-                .baseUri(printfulConfig.getCustomApparelBaseUrl())
-                .header("Accept", "application/json")
-                .header("Content-Type", "application/json")
-                .cookie("PHPSESSID", phpSessId)
-                .cookie("form_key", formKey)
+        return customApparelJsonRequest(phpSessId, formKey)
                 .body(checkoutPayload)
                 .post(printfulConfig.getOrderCheckoutEndpoint())
                 .then()
                 .statusCode(200)
                 .extract()
                 .response();
+    }
+
+    private RequestSpecification customApparelCookieRequest(String phpSessId, String formKey) {
+        return given()
+                .spec(defaultRequestSpec)
+                .baseUri(printfulConfig.getCustomApparelBaseUrl())
+                .cookie(COOKIE_PHP_SESSION_ID, phpSessId)
+                .cookie(COOKIE_FORM_KEY, formKey);
+    }
+
+    private RequestSpecification customApparelJsonRequest(String phpSessId, String formKey) {
+        return customApparelCookieRequest(phpSessId, formKey)
+                .header(HEADER_ACCEPT, CONTENT_TYPE_JSON)
+                .header(HEADER_CONTENT_TYPE, CONTENT_TYPE_JSON);
+    }
+
+    private RequestSpecification printfulWebBearerFormRequest(String nonce) {
+        return given()
+                .spec(defaultRequestSpec)
+                .baseUri(printfulConfig.getPrintfulWebBaseUrl())
+                .header(HEADER_AUTHORIZATION, "Bearer " + nonce)
+                .contentType(CONTENT_TYPE_FORM);
+    }
+
+    private RequestSpecification printfulWebBearerJsonRequest(String nonce) {
+        return given()
+                .spec(defaultRequestSpec)
+                .baseUri(printfulConfig.getPrintfulWebBaseUrl())
+                .header(HEADER_AUTHORIZATION, "Bearer " + nonce)
+                .contentType(CONTENT_TYPE_JSON);
+    }
+
+    private RequestSpecification printfulApiRequest() {
+        return given()
+                .spec(defaultRequestSpec)
+                .baseUri(printfulConfig.getPrintfulApiBaseUrl())
+                .header(HEADER_AUTHORIZATION, "Bearer " + printfulConfig.getPrintfulApiToken())
+                .header("X-PF-Store-ID", printfulConfig.getPrintfulStoreId());
+    }
+
+    private static void requireNonBlank(String value, String fieldName) {
+        if (!hasText(value)) {
+            throw new IllegalArgumentException(fieldName + " must not be null or blank");
+        }
+    }
+
+    private static boolean hasText(String value) {
+        return value != null && !value.isBlank();
+    }
+
+    public record FileUploadCallbackRequest(
+            String temporaryFileId,
+            String fileType,
+            long fileSize,
+            String fileName,
+            String location,
+            String bucket,
+            String key,
+            String etag) {
+    }
+
+    private static void validateCallbackRequest(FileUploadCallbackRequest callbackRequest) {
+        requireNonBlank(callbackRequest.temporaryFileId(), "temporaryFileId");
+        requireNonBlank(callbackRequest.fileType(), "fileType");
+        requireNonBlank(callbackRequest.fileName(), "fileName");
+        requireNonBlank(callbackRequest.location(), "location");
+        requireNonBlank(callbackRequest.bucket(), "bucket");
+        requireNonBlank(callbackRequest.key(), "key");
+        requireNonBlank(callbackRequest.etag(), "etag");
+        if (callbackRequest.fileSize() <= 0) {
+            throw new IllegalArgumentException("fileSize must be greater than 0");
+        }
     }
 }

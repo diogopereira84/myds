@@ -54,6 +54,9 @@ $env:ADMIN_USERNAME="<redacted>"
 $env:ADMIN_PASSWORD="<redacted>"
 $env:SANDBOX_PUBLIC_APIKEY="<redacted>"
 $env:SANDBOX_ENV_ID="<redacted>"
+$env:CONFIGURATOR_ACCESS_TOKEN="<redacted>"
+$env:AUTH_BROWSER_HEADLESS="true"
+$env:AUTH_BROWSER_SLOWMO_MS="0"
 ```
 
 ## Test Resource Provider
@@ -85,8 +88,6 @@ $env:TEST_ENV="stage3"
 $env:MIRAKL_APIKEY="<redacted>"
 $env:API_GATEWAY_CLIENT_ID="<redacted>"
 $env:MAGENTO_UI_CLIENT_ID="<redacted>"
-$env:ADMIN_USERNAME="<redacted>"
-$env:ADMIN_PASSWORD="<redacted>"
 $env:SANDBOX_PUBLIC_APIKEY="<redacted>"
 $env:SANDBOX_ENV_ID="<redacted>"
 ```
@@ -96,3 +97,47 @@ $env:SANDBOX_ENV_ID="<redacted>"
 ```powershell
 mvn -q -DskipTests=false test
 ```
+
+## API Client Naming Conventions
+
+The framework uses a normalized naming pattern in API client classes under `src/main/java/com/fedex/automation/service/fedex/client`:
+
+- `request*` for HTTP operations that execute a request and return a `Response`.
+- `*Body` for operations that return validated response body text (`String`).
+- `*Expect*` for operations that enforce a specific expected outcome (for example redirect).
+
+Examples:
+
+- `CatalogApiClient.requestProductSearchBody(...)`
+- `CartApiClient.requestCartPageBody()`
+- `CartApiClient.requestCustomerSectionForValidationBody(...)`
+- `CartApiClient.addToCartExpectRedirect(...)`
+- `CheckoutApiClient.requestEstimateShipping(...)`
+- `CheckoutApiClient.requestCreateQuote(...)`
+- `CheckoutApiClient.requestSubmitOrder(...)`
+- `ConfiguratorApiClient.requestAddConfiguredItemToCart(...)`
+- `RateApiClient.requestInitialRate(...)`
+
+Service classes should call only these normalized methods.
+
+## Client API Reference
+
+Use these methods in new code:
+
+| Client | Supported method |
+| --- | --- |
+| `CatalogApiClient` | `requestProductSearchBody(...)` |
+| `CartApiClient` | `requestCartPageBody()` |
+| `CartApiClient` | `requestCustomerSectionForValidationBody(...)` |
+| `CartApiClient` | `requestCustomerSectionUi(...)` |
+| `CartApiClient` | `addToCartExpectRedirect(...)` |
+| `CheckoutApiClient` | `requestEstimateShipping(...)` |
+| `CheckoutApiClient` | `requestDeliveryRate(...)` |
+| `CheckoutApiClient` | `requestCreateQuote(...)` |
+| `CheckoutApiClient` | `requestPayRate()` |
+| `CheckoutApiClient` | `requestSubmitOrder(...)` |
+| `CheckoutApiClient` | `requestEncryptionKey()` |
+| `ConfiguratorApiClient` | `requestAddConfiguredItemToCart(...)` |
+| `RateApiClient` | `requestInitialRate(...)` |
+
+Naming/API cleanup does not change intended business behavior.

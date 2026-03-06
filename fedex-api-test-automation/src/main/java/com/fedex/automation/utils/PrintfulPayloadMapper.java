@@ -13,20 +13,21 @@ public final class PrintfulPayloadMapper {
 
     public static List<PrintfulVariant> mapDataTableToVariants(DataTable dataTable) {
         List<Map<String, String>> variantRows = dataTable.asMaps(String.class, String.class);
+        if (variantRows.isEmpty()) {
+            throw new IllegalArgumentException("Printful variants table must include at least one row.");
+        }
         List<PrintfulVariant> variantMap = new ArrayList<>();
 
         for (Map<String, String> row : variantRows) {
-            String price = row.get("price");
-
-            // Strictly enforce that price must be provided
-            if (price == null || price.trim().isEmpty()) {
-                throw new IllegalArgumentException("A 'price' column is required in the data table for Printful variants but was not found.");
-            }
+            String variantId = required(row, "variantId");
+            String size = required(row, "size");
+            String amount = required(row, "amount");
+            String price = required(row, "price");
 
             variantMap.add(PrintfulVariant.builder()
-                    .variantId(Integer.parseInt(row.get("variantId")))
-                    .size(row.get("size"))
-                    .amount(Integer.parseInt(row.get("amount")))
+                    .variantId(parseInt(variantId, "variantId"))
+                    .size(size)
+                    .amount(parseInt(amount, "amount"))
                     .retailDiscountedPrice(price)
                     .bulkDiscountPrice(price)
                     .priceDifferenceFromOriginalBulkDiscountPrice("0.00")
@@ -34,5 +35,21 @@ public final class PrintfulPayloadMapper {
                     .build());
         }
         return variantMap;
+    }
+
+    private static String required(Map<String, String> row, String key) {
+        String value = row.get(key);
+        if (value == null || value.trim().isEmpty()) {
+            throw new IllegalArgumentException("Missing required column: " + key);
+        }
+        return value.trim();
+    }
+
+    private static int parseInt(String value, String fieldName) {
+        try {
+            return Integer.parseInt(value);
+        } catch (NumberFormatException ex) {
+            throw new IllegalArgumentException("Invalid integer for " + fieldName + ": " + value, ex);
+        }
     }
 }

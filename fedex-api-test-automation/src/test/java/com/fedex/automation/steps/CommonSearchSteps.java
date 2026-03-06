@@ -22,10 +22,10 @@ public class CommonSearchSteps {
     public void iSearchForTheFollowingVendorProducts(Vendor vendor, DataTable dataTable) {
         log.info("--- Initiating {} Product Search ---", vendor.name());
 
-        // 1. Get the correct implementation dynamically
+        // Get the correct implementation dynamically
         VendorSearchStrategy searchStrategy = searchStrategyFactory.getStrategy(vendor);
 
-        // 2. Extract products and execute the search
+        // Extract products and execute the search
         List<Map<String, String>> products = dataTable.asMaps(String.class, String.class);
         for (Map<String, String> product : products) {
             String productName = product.get("category");

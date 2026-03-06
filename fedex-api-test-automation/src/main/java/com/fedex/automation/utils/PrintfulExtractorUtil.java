@@ -9,11 +9,14 @@ public final class PrintfulExtractorUtil {
     private PrintfulExtractorUtil() {}
 
     public static String extractFormKey(Response response, String redirectLocation) {
+        if (response == null) {
+            throw new IllegalArgumentException("response must not be null");
+        }
         if (response.getCookies().containsKey(PrintfulConstants.COOKIE_FORM_KEY)) {
             return response.getCookies().get(PrintfulConstants.COOKIE_FORM_KEY);
         }
 
-        String responseBody = response.asString();
+        String responseBody = response.getBody() != null ? response.asString() : "";
         String safeLocation = redirectLocation != null ? redirectLocation : "";
 
         Matcher locationMatcher = PrintfulConstants.URL_FORM_KEY_PATTERN.matcher(safeLocation);

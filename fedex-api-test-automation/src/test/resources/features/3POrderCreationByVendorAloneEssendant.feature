@@ -1,5 +1,6 @@
 Feature: Essendant 3P Order Creation by Vendor Alone - Product Checkout Flow
 
+  @Regression
   Scenario Outline: 3P Order Creation by Vendor Alone Essendant Single Item Order
     Given I initialize the FedEx session
     And I search for the following products:
@@ -50,7 +51,7 @@ Feature: Essendant 3P Order Creation by Vendor Alone - Product Checkout Flow
       | productTotalAmount   | <productTotalAmount> |
     Examples:
       | firstName | lastName | email                         | taxableAmount | taxAmount | productTotalAmount | totalAmount | authStatus |
-      | Harvey    | Hamilton | harvey.hamilton.osv@fedex.com | 75.79         | 8.15      | productTotalAmount | 83.94       | APPROVED   |
+      | Harvey    | Hamilton | harvey.hamilton.osv@fedex.com | 75.79         | 8.15      | 83.94              | 83.94       | APPROVED   |
 
 # Variation 2: Multi-Item with Mixed Quantities
   Scenario Outline: 3P Order Creation by Vendor Alone Essendant Multi-Item Order with Mixed Quantities
