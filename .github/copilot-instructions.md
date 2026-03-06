@@ -1,3 +1,4 @@
+
 This repository is a Java backend test automation project focused on API and controller testing.
 
 Review pull requests as a senior Java test automation engineer.
@@ -42,6 +43,9 @@ For follow-up reviews on the same pull request:
 - report only must-fix or high-impact improvements unless explicitly asked for a broader review
 
 When suggesting refactors:
+- prefer small, safe, incremental improvements
+- explain why the change matters
+- include concrete code suggestions when useful
 - prefer small, safe, incremental improvements
 - explain why the change matters
 - include concrete code suggestions when useful
