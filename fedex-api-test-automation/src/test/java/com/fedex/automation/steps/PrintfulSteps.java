@@ -394,7 +394,7 @@ public class PrintfulSteps {
                     .build());
         }
 
-        // 2. Fetch the Pricing API
+        // Fetch the Pricing API
         var pricingResponse = printfulApparelService.getProductPrices(
                 productId,
                 testContext.getPrintfulPhpSessIdCookie(),

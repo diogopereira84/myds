@@ -23,8 +23,6 @@ import java.util.Collections;
 import java.util.Map;
 import java.util.UUID;
 
-import static org.junit.jupiter.api.Assertions.fail;
-
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -76,30 +74,35 @@ public class TemplateConfiguratorService {
     @Value("${configurator.access.token:}")
     private String configuratorAccessToken;
 
-    public void createConfiguratorSession() {
+    public Response createConfiguratorSession() {
         String sku = testContext.getCurrentSku();
-        String productId = testContext.getCurrentProductId();
         String transactionId = UUID.randomUUID().toString();
 
-        log.info("--- [Action] Creating Configurator Session [SKU: {}, ProductID: {}] ---", sku, productId);
+        if (sku == null || sku.isBlank()) {
+            throw new IllegalStateException("Missing SKU in TestContext. Ensure product search ran.");
+        }
 
-        try {
-            InputStream is = getClass().getClassLoader().getResourceAsStream("templates/1P_ConfiguratorSessionsTemplate.json");
-            if (is == null) throw new IllegalArgumentException("Template file not found.");
+        log.info("--- [Action] Creating Configurator Session [SKU: {}] ---", sku);
+
+        try (InputStream is = getClass().getClassLoader().getResourceAsStream("templates/1P_ConfiguratorSessionsTemplate.json")) {
+            if (is == null) {
+                throw new IllegalStateException("Template file not found.");
+            }
 
             ObjectNode payloadNode = (ObjectNode) objectMapper.readTree(is);
             ObjectNode productSelector = (ObjectNode) payloadNode.at("/configuratorSessionParameters/configuratorOptions/productSelector");
             productSelector.put("productId", sku);
 
             ObjectNode userPreferences = (ObjectNode) payloadNode.at("/configuratorSessionParameters/configuratorOptions/userPreferences");
-            if (userPreferences != null) {
-                String currentToken = userPreferences.path("accessToken").asText("");
-                if ("REPLACE_ACCESS_TOKEN".equals(currentToken)) {
-                    if (configuratorAccessToken == null || configuratorAccessToken.isBlank()) {
-                        throw new IllegalStateException("Missing configurator access token. Set configurator.access.token (env: CONFIGURATOR_ACCESS_TOKEN).");
-                    }
-                    userPreferences.put("accessToken", configuratorAccessToken.trim());
+            if (userPreferences == null || userPreferences.isMissingNode()) {
+                throw new IllegalStateException("Template missing userPreferences node.");
+            }
+            String currentToken = userPreferences.path("accessToken").asText("");
+            if ("REPLACE_ACCESS_TOKEN".equals(currentToken)) {
+                if (configuratorAccessToken == null || configuratorAccessToken.isBlank()) {
+                    throw new IllegalStateException("Missing configurator access token. Set configurator.access.token (env: CONFIGURATOR_ACCESS_TOKEN).");
                 }
+                userPreferences.put("accessToken", configuratorAccessToken.trim());
             }
 
             // Fetch the base structure (15 valid features) to prevent backend rule invalidation
@@ -122,7 +125,6 @@ public class TemplateConfiguratorService {
                     .body(payloadNode.toString())
                     .post(configSessionsEndpoint);
 
-            response.then().statusCode(200);
             testContext.setLastResponse(response);
 
             String configuratorUrl = response.jsonPath().getString("output.configuratorSession.configuratorURL");
@@ -130,17 +132,20 @@ public class TemplateConfiguratorService {
                 String sessionId = configuratorUrl.substring(configuratorUrl.lastIndexOf("/") + 1);
                 testContext.setSessionId(sessionId);
                 log.info("Successfully created Configurator Session. Session ID: {}", sessionId);
-            } else {
-                fail("Failed to extract Session ID from configurator URL: " + configuratorUrl);
             }
 
+            return response;
+
         } catch (Exception e) {
-            fail("Error executing Configurator Session creation: " + e.getMessage());
+            throw new IllegalStateException("Error executing Configurator Session creation.", e);
         }
     }
 
-    public void searchConfiguratorSession() {
+    public Response searchConfiguratorSession() {
         String sessionId = testContext.getSessionId();
+        if (sessionId == null || sessionId.isBlank()) {
+            throw new IllegalStateException("Missing configurator sessionId in TestContext.");
+        }
         ObjectNode payload = objectMapper.createObjectNode();
         payload.putObject("configuratorSessionSearchCriteria").put("configuratorSessionId", sessionId);
 
@@ -152,11 +157,19 @@ public class TemplateConfiguratorService {
                 .post(configSearchEndpoint);
 
         testContext.setLastResponse(response);
+        return response;
     }
 
-    public void addConfiguredItemToCart(int quantity) {
+    public Response addConfiguredItemToCart(int quantity) {
         String stateId = testContext.getConfiguratorStateId();
         String fullPayload = testContext.getConfiguratorPayload();
+
+        if (stateId == null || stateId.isBlank()) {
+            throw new IllegalStateException("Missing configuratorStateId in TestContext.");
+        }
+        if (fullPayload == null || fullPayload.isBlank()) {
+            throw new IllegalStateException("Missing configurator payload in TestContext.");
+        }
 
         try {
             ObjectNode payloadNode = (ObjectNode) objectMapper.readTree(fullPayload);
@@ -191,7 +204,7 @@ public class TemplateConfiguratorService {
                 }
             }
 
-            String urlEncodedData = URLEncoder.encode(payloadNode.toString(), StandardCharsets.UTF_8.toString());
+            String urlEncodedData = URLEncoder.encode(payloadNode.toString(), StandardCharsets.UTF_8);
             String rawBody = "data=" + urlEncodedData + "&itemId=";
             String refererUrl = sessionService.getBaseUrl() + "/default/configurator/index/index/responseid/" + stateId;
 
@@ -206,19 +219,29 @@ public class TemplateConfiguratorService {
                     .post(cartProductAddEndpoint);
 
             testContext.setLastResponse(response);
+            return response;
 
         } catch (Exception e) {
-            fail("Failed to push item to cart: " + e.getMessage());
+            throw new IllegalStateException("Failed to push item to cart.", e);
         }
     }
 
-    public void createConfiguratorState(Map<String, String> bddFeatures) throws Exception {
+    public Response createConfiguratorState(Map<String, String> bddFeatures) {
         log.info("--- [Action] Creating Configurator State ---");
+
+        String sessionId = testContext.getSessionId();
+        if (sessionId == null || sessionId.isBlank()) {
+            throw new IllegalStateException("Missing configurator sessionId in TestContext.");
+        }
+        ObjectNode baseProductNode = testContext.getCurrentConfiguredProductNode();
+        if (baseProductNode == null) {
+            throw new IllegalStateException("Missing configured product node in TestContext.");
+        }
 
         ObjectNode payload = objectMapper.createObjectNode();
         ObjectNode configParams = payload.putObject("configuratorStateParameters");
 
-        configParams.put("configuratorSessionId", testContext.getSessionId());
+        configParams.put("configuratorSessionId", sessionId);
         if (testContext.getCurrentSku() != null) {
             configParams.put("integratorProductReference", testContext.getCurrentSku());
         }
@@ -229,7 +252,6 @@ public class TemplateConfiguratorService {
         configParams.put("changeProduct", false);
 
         // Apply dynamic BDD overrides to the clean base template
-        ObjectNode baseProductNode = testContext.getCurrentConfiguredProductNode();
         ObjectNode productNode = buildDynamicProductNode(baseProductNode, testContext.getStaticProductDetails(), bddFeatures);
 
         productNode.put("userProductName", "SimpleText");
@@ -249,18 +271,18 @@ public class TemplateConfiguratorService {
                 .body(payload.toString())
                 .post(configStatesEndpoint);
 
-        response.then().statusCode(200);
         testContext.setLastResponse(response);
 
         String stateId = response.jsonPath().getString("output.configuratorState.configuratorStateId");
-        if (stateId == null) {
-            fail("Failed to retrieve configuratorStateId from response.");
+        if (stateId != null && !stateId.isBlank()) {
+            testContext.setConfiguratorStateId(stateId);
+            log.info("Successfully created Configurator State. State ID: {}", stateId);
         }
-        testContext.setConfiguratorStateId(stateId);
-        log.info("Successfully created Configurator State. State ID: {}", stateId);
 
         ObjectNode returnedState = objectMapper.valueToTree(response.jsonPath().getMap("output.configuratorState"));
         testContext.setConfiguratorPayload(returnedState.toString());
+
+        return response;
     }
 
     /**

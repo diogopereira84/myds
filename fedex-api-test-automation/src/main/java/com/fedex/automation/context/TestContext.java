@@ -67,15 +67,10 @@ public class TestContext {
     private List<PrintfulVariant> printfulFinalCheckoutVariants;
     private String printfulSelectedTechnique; // e.g., "dtg"
 
-
     // Decoupled Search & Add Tracking
     private List<ProductItemContext> searchedProducts = new ArrayList<>();
 
     private Response lastResponse;
-
-
-
-
 
     @Data
     public static class ProductItemContext {

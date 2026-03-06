@@ -1,5 +1,6 @@
 Feature: FedEx Office 1P Product Checkout Flow
 
+  @Regression
   Scenario Outline: 1P Order Creation with Dynamic Product Configuration
     Given I initialize the FedEx session
     # Dynamically resolves base SKU and ID from Menu Hierarchy

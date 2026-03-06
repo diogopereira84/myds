@@ -15,16 +15,16 @@ public class TestDataFactory {
 
     public static Map<String, String> getDefaultAddressMap() {
         Map<String, String> map = new HashMap<>();
-        map.put("firstName", "Diogo");
-        map.put("lastName", "Pereira");
+        map.put("firstName", "Test");
+        map.put("lastName", "User");
         map.put("street", "550 PEACHTREE ST NE");
         map.put("city", "Los Angeles");
         map.put("regionId", "34");
         map.put("regionCode", "CA");
         map.put("countryId", "US");
         map.put("postcode", "90002");
-        map.put("telephone", "4247021234");
-        map.put("email", "dpereira@mcfadyen.com");
+        map.put("telephone", "5550000000");
+        map.put("email", "test.user@example.com");
         return map;
     }
 

@@ -1,6 +1,6 @@
 Feature: CompanyBox Product Checkout Flow
 
-  # Variation 1: Single Item
+  @Regression
   Scenario Outline: 3P Order Creation by Vendor Alone CompanyBox Single Item Order (Qty 1)
     Given I initialize the FedEx session
     When I search for the following products:

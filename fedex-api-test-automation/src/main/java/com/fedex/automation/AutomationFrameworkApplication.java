@@ -5,6 +5,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
+import java.time.Clock;
+
 @SpringBootApplication
 public class AutomationFrameworkApplication {
 
@@ -16,5 +18,10 @@ public class AutomationFrameworkApplication {
     @Bean
     public ObjectMapper objectMapper() {
         return new ObjectMapper();
+    }
+
+    @Bean
+    public Clock systemClock() {
+        return Clock.systemUTC();
     }
 }

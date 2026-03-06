@@ -1,156 +1,126 @@
 package com.fedex.automation.service.fedex;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fedex.automation.constants.FedExConstants;
-import com.fedex.automation.model.fedex.*;
-import io.restassured.http.ContentType;
+import com.fedex.automation.model.fedex.CreateQuotePayload;
+import com.fedex.automation.model.fedex.DeliveryRateRequestForm;
+import com.fedex.automation.model.fedex.EstimateShippingRequest;
+import com.fedex.automation.model.fedex.SubmitOrderRequest;
+import com.fedex.automation.service.fedex.client.CheckoutApiClient;
+import com.fedex.automation.service.fedex.exception.CheckoutErrorCode;
+import com.fedex.automation.service.fedex.exception.CheckoutOperationException;
+import com.fedex.automation.service.fedex.parser.CheckoutPayloadMapper;
+import com.fedex.automation.service.fedex.validation.CheckoutRequestValidator;
 import io.restassured.response.Response;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-
-import java.util.Map;
-import java.util.Objects;
-
-import static org.junit.jupiter.api.Assertions.fail;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class CheckoutService {
 
-    private final SessionService sessionService;
-    private final ObjectMapper objectMapper;
+    private static final String OP_ESTIMATE_SHIPPING = "estimate shipping";
+    private static final String OP_DELIVERY_RATE = "delivery rate";
+    private static final String OP_CREATE_QUOTE = "create quote";
+    private static final String OP_PAY_RATE = "pay rate";
+    private static final String OP_SUBMIT_ORDER = "submit order";
+    private static final String OP_ENCRYPTION_KEY = "fetch encryption key";
 
-    @Value("${endpoint.shipping.estimate}")
-    private String estimateEndpoint;
+    private static final String MSG_MASKED_QUOTE_ID_REQUIRED = "Masked Quote ID cannot be null/blank.";
+    private static final String MSG_ESTIMATE_REQUEST_REQUIRED = "EstimateShippingRequest cannot be null.";
+    private static final String MSG_DELIVERY_RATE_FORM_REQUIRED = "DeliveryRateRequestForm cannot be null.";
+    private static final String MSG_QUOTE_PAYLOAD_REQUIRED = "Quote payload cannot be null.";
+    private static final String MSG_SUBMIT_ORDER_REQUIRED = "SubmitOrderRequest cannot be null.";
+    private static final String MSG_QUOTE_ID_REQUIRED = "quoteId cannot be null/blank.";
 
-    @Value("${endpoint.shipping.deliveryrate}")
-    private String deliveryRateEndpoint;
+    private final CheckoutApiClient checkoutApiClient;
+    private final CheckoutPayloadMapper payloadMapper;
+    private final CheckoutRequestValidator validator;
 
-    @Value("${endpoint.quote.create}")
-    private String createQuoteEndpoint;
+    public Response estimateShippingResponse(String maskedQuoteId, EstimateShippingRequest request) {
+        validator.requireNonBlank(maskedQuoteId, MSG_MASKED_QUOTE_ID_REQUIRED);
+        validator.requireNonNull(request, MSG_ESTIMATE_REQUEST_REQUIRED);
 
-    @Value("${endpoint.pay.rate}")
-    private String payRateEndpoint;
-
-    @Value("${endpoint.order.submit}")
-    private String submitOrderEndpoint;
-
-    @Value("${endpoint.delivery.encryptionkey}")
-    private String encryptionKeyEndpoint;
-
-    @Value("${fedex.constants.header.x-requested-with}")
-    private String headerXRequestedWith;
-
-    @Value("${fedex.constants.value.xmlhttprequest}")
-    private String valueXmlHttpRequest;
-
-    public EstimateShipMethodResponse[] estimateShipping(String maskedQuoteId, EstimateShippingRequest request) {
-        Objects.requireNonNull(maskedQuoteId, "Masked Quote ID cannot be null.");
-        String url = estimateEndpoint.replace("{cartId}", maskedQuoteId);
-
-        return sessionService.checkoutRequest()
-                .contentType(ContentType.JSON)
-                .header(FedExConstants.HEADER_X_REQUESTED_WITH, FedExConstants.VALUE_XMLHTTPREQUEST)
-                .body(request)
-                .post(url)
-                .then()
-                .statusCode(200)
-                .extract().as(EstimateShipMethodResponse[].class);
+        return executeResponse(OP_ESTIMATE_SHIPPING,
+                () -> checkoutApiClient.requestEstimateShipping(maskedQuoteId, request));
     }
 
-    public JsonNode getDeliveryRate(DeliveryRateRequestForm form) {
-        Response response = sessionService.checkoutRequest()
-                .contentType("application/x-www-form-urlencoded; charset=UTF-8")
-                .header(FedExConstants.HEADER_X_REQUESTED_WITH, FedExConstants.VALUE_XMLHTTPREQUEST)
-                .formParam("firstname", form.getFirstname())
-                .formParam("lastname", form.getLastname())
-                .formParam("email", form.getEmail())
-                .formParam("telephone", form.getTelephone())
-                .formParam("ship_method", form.getShipMethod())
-                .formParam("zipcode", form.getZipcode())
-                .formParam("region_id", form.getRegionId())
-                .formParam("city", form.getCity())
-                .formParam("street[]", form.getStreet().get(0))
-                .formParam("street[]", form.getStreet().size() > 1 ? form.getStreet().get(1) : "")
-                .formParam("company", form.getCompany())
-                .formParam("is_residence_shipping", form.getIsResidenceShipping().toString())
-                .formParam("ship_method_data", mapToJson(form.getShipMethodData()))
-                .formParam("third_party_carrier_code", form.getThirdPartyCarrierCode())
-                .formParam("third_party_method_code", form.getThirdPartyMethodCode())
-                .formParam("first_party_carrier_code", "")
-                .formParam("first_party_method_code", "")
-                .formParam("location_id", "")
-                .post(deliveryRateEndpoint);
+    public Response getDeliveryRateResponse(DeliveryRateRequestForm form) {
+        validator.requireNonNull(form, MSG_DELIVERY_RATE_FORM_REQUIRED);
+        String shipMethodDataJson = toJson(form.getShipMethodData(), "shipMethodData");
 
-        try {
-            return objectMapper.readTree(response.asString());
-        } catch (Exception e) {
-            throw new RuntimeException("Error parsing delivery rate: " + response.asString(), e);
-        }
+        return executeResponse(OP_DELIVERY_RATE,
+                () -> checkoutApiClient.requestDeliveryRate(form, shipMethodDataJson));
     }
 
-    public void createQuote(CreateQuotePayload quotePayload) {
-        try {
-            Response response = sessionService.checkoutRequest()
-                    .contentType("application/x-www-form-urlencoded; charset=UTF-8")
-                    .header(FedExConstants.HEADER_X_REQUESTED_WITH, FedExConstants.VALUE_XMLHTTPREQUEST)
-                    .formParam("data", objectMapper.writeValueAsString(quotePayload))
-                    .post(createQuoteEndpoint);
+    public Response createQuoteResponse(CreateQuotePayload quotePayload) {
+        validator.requireNonNull(quotePayload, MSG_QUOTE_PAYLOAD_REQUIRED);
+        String quotePayloadJson = toJson(quotePayload, "quote payload");
 
-            if (response.statusCode() != 200 || response.asString().toLowerCase().contains("exception")) {
-                fail("Create Quote Failed. Status: " + response.statusCode());
-            }
-        } catch (Exception e) {
-            throw new RuntimeException("Error creating quote", e);
-        }
+        return executeResponse(OP_CREATE_QUOTE,
+                () -> checkoutApiClient.requestCreateQuote(quotePayloadJson));
     }
 
-    public void callPayRate() {
-        sessionService.checkoutRequest()
-                .contentType("application/x-www-form-urlencoded; charset=UTF-8")
-                .header(FedExConstants.HEADER_X_REQUESTED_WITH, FedExConstants.VALUE_XMLHTTPREQUEST)
-                .formParam("fedexAccount", "")
-                .formParam("shippingAccount", "")
-                .formParam("selectedProductionId", "")
-                .post(payRateEndpoint)
-                .then()
-                .statusCode(200);
+    public Response callPayRateResponse() {
+        return executeResponse(OP_PAY_RATE, checkoutApiClient::requestPayRate);
     }
 
-    public String submitOrder(SubmitOrderRequest request, String quoteId) {
-        try {
-            Map<String, String> checkoutCookies = new java.util.HashMap<>();
-            checkoutCookies.put("quoteId", quoteId);
+    public Response submitOrderResponse(SubmitOrderRequest request, String quoteId) {
+        validator.requireNonNull(request, MSG_SUBMIT_ORDER_REQUIRED);
+        validator.requireNonBlank(quoteId, MSG_QUOTE_ID_REQUIRED);
+        String requestJson = toJson(request, "submit order request");
 
-            Response response = sessionService.checkoutRequest(checkoutCookies)
-                    .contentType("application/x-www-form-urlencoded; charset=UTF-8")
-                    .header(FedExConstants.HEADER_X_REQUESTED_WITH, FedExConstants.VALUE_XMLHTTPREQUEST)
-                    .queryParam("pickstore", "0")
-                    .formParam("data", objectMapper.writeValueAsString(request))
-                    .post(submitOrderEndpoint);
+        return executeResponse(OP_SUBMIT_ORDER,
+                () -> checkoutApiClient.requestSubmitOrder(requestJson, quoteId));
+    }
 
-            return response.asString();
-        } catch (Exception e) {
-            throw new RuntimeException("Error submitting order", e);
-        }
+    public Response fetchEncryptionKeyResponse() {
+        return executeResponse(OP_ENCRYPTION_KEY, checkoutApiClient::requestEncryptionKey);
     }
 
     public String fetchEncryptionKey() {
-        return sessionService.checkoutRequest()
-                .header(FedExConstants.HEADER_X_REQUESTED_WITH, FedExConstants.VALUE_XMLHTTPREQUEST)
-                .get(encryptionKeyEndpoint)
-                .jsonPath().getString("encryption.key");
+        return payloadMapper.extractEncryptionKey(fetchEncryptionKeyResponse());
     }
 
-    private String mapToJson(Object obj) {
+    private String toJson(Object value, String label) {
         try {
-            return objectMapper.writeValueAsString(obj);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
+            return payloadMapper.toJson(value);
+        } catch (CheckoutOperationException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new CheckoutOperationException(
+                    CheckoutErrorCode.SERIALIZATION_ERROR,
+                    "Failed to serialize " + label + ".",
+                    ex
+            );
         }
+    }
+
+    private Response executeResponse(String operationName, ResponseSupplier responseSupplier) {
+        try {
+            Response response = responseSupplier.get();
+            if (response == null) {
+                throw new CheckoutOperationException(
+                        CheckoutErrorCode.NULL_RESPONSE,
+                        "Unexpected null response during " + operationName + "."
+                );
+            }
+            return response;
+        } catch (CheckoutOperationException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            log.error("Unexpected failure during {}: {}", operationName, ex.toString());
+            throw new CheckoutOperationException(
+                    CheckoutErrorCode.UPSTREAM_STATUS_ERROR,
+                    "Unexpected failure during " + operationName + ".",
+                    ex
+            );
+        }
+    }
+
+
+    @FunctionalInterface
+    private interface ResponseSupplier {
+        Response get();
     }
 }
