@@ -5,7 +5,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fedex.automation.context.TestContext;
 import com.fedex.automation.model.fedex.*;
 import com.fedex.automation.service.fedex.*;
-import com.fedex.automation.service.mirakl.MiraklAdminTriggerService;
 import com.fedex.automation.service.mirakl.OfferService;
 import com.fedex.automation.utils.FedExEncryptionUtil;
 import com.fedex.automation.utils.TestDataFactory;
@@ -31,7 +30,6 @@ public class CommonCheckoutSteps {
     @Autowired private TestContext testContext;
     @Autowired private CartService cartService;
     @Autowired private CheckoutService checkoutService;
-    @Autowired private MiraklAdminTriggerService miraklAdminTriggerService;
     @Autowired private ObjectMapper objectMapper;
     @Autowired private OfferService offerService;
     @Autowired private SessionService sessionService;
@@ -363,11 +361,6 @@ public class CommonCheckoutSteps {
                     transactionTotals.path("totalAmount").asDouble(),
                     "Mismatch in field: totalAmount" + debugContext);
         }
-    }
-
-    @And("I trigger the order export to Mirakl")
-    public void iTriggerTheOrderExportToMirakl() {
-        miraklAdminTriggerService.triggerSendToMirakl(testContext.getPlacedOrderNumber());
     }
 
     private JsonNode getFirstLineItemContainer() {

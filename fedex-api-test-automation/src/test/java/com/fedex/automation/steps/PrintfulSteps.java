@@ -25,9 +25,6 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.util.*;
 
 @Slf4j
@@ -176,7 +173,7 @@ public class PrintfulSteps {
         }
         // Save the result model into context for later stages!
         testContext.setAuthNonceResponse(nonceResponse);
-        log.info("Successfully Generated Auth Nonce: {} for the externalProductId: {}", nonceResponse.getNonce(), nonceResponse.getExternalProductId());
+        log.debug("Successfully Generated Auth Nonce: {} for the externalProductId: {}", maskToken(nonceResponse.getNonce()), nonceResponse.getExternalProductId());
     }
 
     @When("^I execute the Printful punchout for the resolved products$")
@@ -325,7 +322,7 @@ public class PrintfulSteps {
         List<Map<String, String>> rows = dataTable.asMaps(String.class, String.class);
         Map<String, String> quantityMap = rows.get(0);
 
-        Map<String, Integer> selectedQuantities = new HashMap<>();
+        Map<String, Integer> selectedQuantities = new LinkedHashMap<>();
 
         // Loop through the data table columns (Sizes: S, M, L, etc.)
         for (Map.Entry<String, String> entry : quantityMap.entrySet()) {
@@ -362,11 +359,10 @@ public class PrintfulSteps {
                 .toList();
 
         List<PrintfulVariant> baseCheckoutVariants = new ArrayList<>();
-        // Ensure deterministic ordering of variants by sorting sizes before iteration
-        List<String> orderedSizes = new ArrayList<>(selectedQuantities.keySet());
-        orderedSizes.sort(String::compareToIgnoreCase);
-        for (String size : orderedSizes) {
-            Integer quantity = selectedQuantities.get(size);
+        // Preserve input order to keep the "main variant" aligned with the DataTable
+        for (Map.Entry<String, Integer> entry : selectedQuantities.entrySet()) {
+            String size = entry.getKey();
+            Integer quantity = entry.getValue();
             var matchedVariant = colorVariants.stream()
                     .filter(v -> size.equalsIgnoreCase(v.getSize()))
                     .findFirst()
@@ -454,5 +450,15 @@ public class PrintfulSteps {
             throw new IllegalStateException("External productId is not a valid UUID: " + externalProductId, e);
         }
         log.info("Punchout context verified: sessionId, form_key, externalProductId present.");
+    }
+
+    private static String maskToken(String value) {
+        if (value == null || value.isBlank()) {
+            return "****";
+        }
+        if (value.length() <= 4) {
+            return "****";
+        }
+        return "****" + value.substring(value.length() - 4);
     }
 }
