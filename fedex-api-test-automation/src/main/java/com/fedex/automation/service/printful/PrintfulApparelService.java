@@ -1,5 +1,6 @@
 package com.fedex.automation.service.printful;
 
+import com.fedex.automation.config.FedexConfig;
 import com.fedex.automation.config.PrintfulConfig;
 import com.fedex.automation.model.printful.*;
 import io.restassured.response.Response;
@@ -22,17 +23,15 @@ public class PrintfulApparelService {
 
     private final RequestSpecification defaultRequestSpec;
     private final PrintfulConfig printfulConfig;
-
-    @Value("${base.url}")
-    private String fedexBaseUrl;
+    private final FedexConfig fedexConfig;
 
     public Response executePunchout(String sku, String offerId, String shopSku) {
         String punchoutPath = String.format("/default/marketplacepunchout/index/index/sku/%s/offer_id/%s/seller_sku/%s/", sku, offerId, shopSku);
-        log.info("Executing Printful Punchout GET to: {}{}", fedexBaseUrl, punchoutPath);
+        log.info("Executing Printful Punchout GET to: {}{}", fedexConfig.getBaseUrl(), punchoutPath);
 
         return given()
                 .spec(defaultRequestSpec)
-                .baseUri(fedexBaseUrl)
+                .baseUri(fedexConfig.getBaseUrl())
                 .redirects().follow(false)
                 .get(punchoutPath)
                 .then()

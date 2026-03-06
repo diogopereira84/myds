@@ -5,7 +5,6 @@ import io.restassured.specification.RequestSpecification;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.HashMap;
@@ -20,15 +19,14 @@ import static io.restassured.RestAssured.given;
 @ScenarioScope // Instructs Spring to attempt creating a fresh bean per scenario
 public class SessionService {
 
-    @Value("${base.url}")
-    @Getter
-    private String baseUrl;
-
     @Autowired
     private RequestSpecification defaultRequestSpec;
 
     @Autowired
     private AuthenticationService authenticationService;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.fedex.automation.config.FedexConfig fedexConfig;
 
     private final Map<String, String> sessionCookies = new HashMap<>();
 
@@ -100,19 +98,23 @@ public class SessionService {
 
     // --- Standard Request (same-origin, staging2) ---
     public RequestSpecification authenticatedRequest() {
+        String baseUrl = getBaseUrl();
         return buildBaseRequest(null, baseUrl + "/", baseUrl, "same-origin").baseUri(baseUrl);
     }
 
     public RequestSpecification authenticatedRequest(Map<String, String> extraCookies) {
+        String baseUrl = getBaseUrl();
         return buildBaseRequest(extraCookies, baseUrl + "/", baseUrl, "same-origin").baseUri(baseUrl);
     }
 
     // --- Checkout Request (no Origin, checkout referer) ---
     public RequestSpecification checkoutRequest() {
+        String baseUrl = getBaseUrl();
         return buildBaseRequest(null, baseUrl + "/default/checkout", null, "same-origin").baseUri(baseUrl);
     }
 
     public RequestSpecification checkoutRequest(Map<String, String> extraCookies) {
+        String baseUrl = getBaseUrl();
         return buildBaseRequest(extraCookies, baseUrl + "/default/checkout", null, "same-origin").baseUri(baseUrl);
     }
 
@@ -153,5 +155,9 @@ public class SessionService {
         int visibleChars = 4;
         if (value.length() <= visibleChars) return "****";
         return "****" + value.substring(value.length() - visibleChars);
+    }
+
+    public String getBaseUrl() {
+        return fedexConfig.getBaseUrl();
     }
 }

@@ -11,6 +11,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.util.Objects;
+
 import static io.restassured.RestAssured.given;
 
 @Slf4j
@@ -66,11 +68,18 @@ public class OfferService {
 
         String endpoint = miraklConfig.getShopOffersEndpoint().replace("{shopId}", shopId);
 
-        Response response = given()
+        var request = given()
                 .spec(defaultRequestSpec)
                 .baseUri(miraklConfig.getBaseUrl())
                 .header("Authorization", miraklConfig.getApiKey())
-                .header("Accept", "application/json")
+                .header("Accept", "application/json");
+
+        // Prefer server-side filtering when supported by Mirakl
+        if (targetSku != null && !targetSku.isBlank()) {
+            request.queryParam("product_sku", targetSku);
+        }
+
+        Response response = request
                 .get(endpoint)
                 .then()
                 .statusCode(200)
@@ -85,7 +94,7 @@ public class OfferService {
 
         // Return the full offer object so we can access offerId AND shopSku
         return offersResponse.getOffers().stream()
-                .filter(offer -> targetSku.equals(offer.getProductSku()))
+                .filter(offer -> Objects.equals(targetSku, offer.getProductSku()))
                 .findFirst()
                 .orElseThrow(() -> new RuntimeException("Offer not found for SKU: " + targetSku + " in Shop: " + shopId));
     }

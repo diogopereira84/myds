@@ -1,6 +1,6 @@
 Feature: Printful 3P Order Creation by Vendor Alone - Product Checkout Flow
 
-  Scenario Outline: 3P Order Creation by Vendor Alone Printful Single Item Order
+  Scenario: 3P Order Creation by Vendor Alone Printful Single Item Order
     Given I initialize the FedEx session
     And I search for the following PRINTFUL products:
       | category               |
@@ -25,6 +25,3 @@ Feature: Printful 3P Order Creation by Vendor Alone - Product Checkout Flow
     # Fetches the variants API, matches the IDs to the sizes above, and builds the payload
     When I add to cart or checkout the Printful apparel variants
     Then the Printful checkout response should be successful
-    Examples:
-      | firstName | lastName | email                         |
-      | Harvey    | Hamilton | harvey.hamilton.osv@fedex.com |

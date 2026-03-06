@@ -74,7 +74,7 @@ public class PrintfulSteps {
         String nonce = authNonceResponse.getNonce();
 
         // Load test file via provider to keep resource access concerns isolated
-        java.io.File uploadFile = testResourceProvider.loadToTempFile("classpath:testdata/random.jpg");
+        java.io.File uploadFile = testResourceProvider.loadToTempFile("testdata/random.jpg");
 
         // --- Get Credentials ---
         var credsResponse = printfulApparelService.getS3UploadCredentials(nonce);

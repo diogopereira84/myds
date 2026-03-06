@@ -11,6 +11,7 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Objects;
 
 @Component
 @Profile("local")
@@ -43,10 +44,14 @@ public class FileSystemTestResourceProvider implements TestResourceProvider {
     }
 
     private Path resolvePath(String resourcePath) {
-        if (baseDir != null && !baseDir.isBlank()) {
-            return Paths.get(baseDir, resourcePath);
+        String normalizedPath = resourcePath;
+        if (normalizedPath != null && normalizedPath.startsWith("classpath:")) {
+            normalizedPath = normalizedPath.substring("classpath:".length());
         }
-        return Paths.get(resourcePath);
+        if (baseDir != null && !baseDir.isBlank()) {
+            return Paths.get(baseDir, normalizedPath);
+        }
+        return Paths.get(Objects.requireNonNull(normalizedPath));
     }
 
     private String inferSuffix(String resourcePath) {
