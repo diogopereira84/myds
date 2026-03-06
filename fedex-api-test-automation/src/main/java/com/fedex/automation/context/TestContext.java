@@ -1,5 +1,7 @@
 package com.fedex.automation.context;
 
+import com.fedex.automation.model.printful.AuthNonceResponse;
+import com.fedex.automation.model.printful.PrintfulVariant;
 import io.restassured.response.Response;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -22,6 +24,8 @@ public class TestContext {
     private String currentSku;
     private String currentOfferId;
     private String sellerModel;
+    private String shopId;
+    private String shopSku;
 
     private CartContext cartData;
     private EstimateShipMethodResponse selectedShippingMethod;
@@ -29,6 +33,9 @@ public class TestContext {
     private String placedOrderNumber;
     private JsonNode checkoutDetails;
     private JsonNode unifiedDataLayer;
+    // Add this to your Printful Flow Tracking section
+    private AuthNonceResponse authNonceResponse;
+    private String printfulTemporaryFileKey;
 
     // --- Dynamic BDD Data ---
     private Map<String, String> shippingAddress;
@@ -47,10 +54,28 @@ public class TestContext {
     private StaticProduct staticProductDetails;
     private String currentProductVersion;
 
+    // --- Printful Flow Tracking ---
+    private String printfulSessionId;
+    private String externalProductId;
+    private String printfulPhpSessIdCookie;
+    private String printfulFormKeyCookie;
+
+    // --- Printful Checkout State ---
+    private String printfulProductId; // e.g., "146"
+    private String printfulSelectedColor; // e.g., "Gold"
+    private Map<String, Integer> printfulSelectedQuantities; // e.g., {"S": 1, "2XL": 2}
+    private List<PrintfulVariant> printfulFinalCheckoutVariants;
+    private String printfulSelectedTechnique; // e.g., "dtg"
+
+
     // Decoupled Search & Add Tracking
     private List<ProductItemContext> searchedProducts = new ArrayList<>();
 
     private Response lastResponse;
+
+
+
+
 
     @Data
     public static class ProductItemContext {
@@ -58,5 +83,14 @@ public class TestContext {
         private String sku;
         private String offerId;
         private String sellerModel;
+    }
+
+    // Helper method to resolve SKU from previously searched products
+    public String getSkuByProductName(String productName) {
+        return searchedProducts.stream()
+                .filter(p -> productName.equals(p.getProductName()))
+                .map(ProductItemContext::getSku)
+                .findFirst()
+                .orElse(null);
     }
 }

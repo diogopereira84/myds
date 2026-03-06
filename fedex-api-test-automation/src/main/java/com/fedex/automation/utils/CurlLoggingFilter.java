@@ -12,6 +12,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -21,12 +22,15 @@ public class CurlLoggingFilter implements Filter {
     @Value("${logging.curl.enabled:false}")
     private boolean curlEnabled;
 
+    private static final Set<String> SENSITIVE_HEADERS = Set.of("authorization", "cookie");
+    private static final Set<String> SENSITIVE_COOKIES = Set.of("phpsessid", "form_key");
+
     @Override
     public Response filter(FilterableRequestSpecification requestSpec,
                            FilterableResponseSpecification responseSpec,
                            FilterContext ctx) {
 
-        if (curlEnabled) {
+        if (curlEnabled && log.isDebugEnabled()) {
             logCurl(requestSpec);
         } else {
             log.info("Request: {} {}", requestSpec.getMethod(), buildFullUrl(requestSpec));
@@ -53,13 +57,25 @@ public class CurlLoggingFilter implements Filter {
 
         // Headers
         for (Header header : requestSpec.getHeaders()) {
-            curl.append(" \\\n--header '").append(header.getName()).append(": ").append(header.getValue()).append("'");
+            String headerName = header.getName();
+            if ("Cookie".equalsIgnoreCase(headerName)) {
+                if (requestSpec.getCookies().asList().isEmpty()) {
+                    String maskedCookieHeader = maskCookieHeader(header.getValue());
+                    curl.append(" \\\n--header 'Cookie: ").append(maskedCookieHeader).append("'");
+                }
+                continue; // log cookies from requestSpec.getCookies() below when present
+            }
+            String headerValue = header.getValue();
+            if (isSensitiveHeader(headerName)) {
+                headerValue = maskValue(headerValue);
+            }
+            curl.append(" \\\n--header '").append(headerName).append(": ").append(headerValue).append("'");
         }
 
         // Cookies
-        if (requestSpec.getCookies().size() > 0) {
+        if (!requestSpec.getCookies().asList().isEmpty()) {
             String cookieString = requestSpec.getCookies().asList().stream()
-                    .map(c -> c.getName() + "=" + c.getValue())
+                    .map(c -> c.getName() + "=" + (isSensitiveCookie(c.getName()) ? maskValue(c.getValue()) : c.getValue()))
                     .collect(Collectors.joining("; "));
             curl.append(" \\\n--header 'Cookie: ").append(cookieString).append("'");
         }
@@ -99,7 +115,25 @@ public class CurlLoggingFilter implements Filter {
         }
 
         curl.append("\n--------------------------------------------------------------------------------");
-        log.info(curl.toString());
+        log.debug(curl.toString());
+    }
+
+    private boolean isSensitiveHeader(String headerName) {
+        return headerName != null && SENSITIVE_HEADERS.contains(headerName.toLowerCase());
+    }
+
+    private boolean isSensitiveCookie(String cookieName) {
+        return cookieName != null && SENSITIVE_COOKIES.contains(cookieName.toLowerCase());
+    }
+
+    private String maskValue(String value) {
+        if (value == null || value.isBlank()) {
+            return "****";
+        }
+        if (value.length() <= 4) {
+            return "****";
+        }
+        return "****" + value.substring(value.length() - 4);
     }
 
     private String buildFullUrl(FilterableRequestSpecification requestSpec) {
@@ -122,5 +156,31 @@ public class CurlLoggingFilter implements Filter {
 
     private boolean isPrintable(String contentType) {
         return contentType != null && (contentType.contains("json") || contentType.contains("xml") || contentType.contains("text"));
+    }
+
+    private String maskCookieHeader(String cookieHeaderValue) {
+        if (cookieHeaderValue == null || cookieHeaderValue.isBlank()) {
+            return "";
+        }
+        String[] pairs = cookieHeaderValue.split(";");
+        StringBuilder masked = new StringBuilder();
+        for (String pair : pairs) {
+            String trimmed = pair.trim();
+            if (trimmed.isEmpty()) {
+                continue;
+            }
+            int equalsIndex = trimmed.indexOf('=');
+            String name = equalsIndex > 0 ? trimmed.substring(0, equalsIndex) : trimmed;
+            String value = equalsIndex > 0 ? trimmed.substring(equalsIndex + 1) : "";
+            if (masked.length() > 0) {
+                masked.append("; ");
+            }
+            if (isSensitiveCookie(name)) {
+                masked.append(name).append("=").append(maskValue(value));
+            } else {
+                masked.append(name).append("=").append(value);
+            }
+        }
+        return masked.toString();
     }
 }

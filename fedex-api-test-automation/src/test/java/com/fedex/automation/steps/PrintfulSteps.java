@@ -1,0 +1,484 @@
+package com.fedex.automation.steps;
+
+import com.fedex.automation.config.MiraklConfig;
+import com.fedex.automation.constants.PrintfulConstants;
+import com.fedex.automation.context.TestContext;
+import com.fedex.automation.model.printful.AuthNonceResponse;
+import com.fedex.automation.model.printful.PrintfulCatalogVariantsResponse;
+import com.fedex.automation.model.printful.PrintfulCheckoutRequest;
+import com.fedex.automation.model.printful.PrintfulFileCallbackResponse;
+import com.fedex.automation.model.printful.PrintfulVariant;
+import com.fedex.automation.service.mirakl.OfferService;
+import com.fedex.automation.service.printful.PrintfulApparelService;
+import com.fedex.automation.utils.PrintfulCheckoutHelper;
+import com.fedex.automation.utils.PrintfulExtractorUtil;
+import com.fedex.automation.utils.PrintfulPayloadMapper;
+import com.fedex.automation.utils.PrintfulUploadFileHelper;
+import com.fedex.automation.utils.TestResourceProvider;
+import io.cucumber.datatable.DataTable;
+import io.cucumber.java.en.And;
+import io.cucumber.java.en.Then;
+import io.cucumber.java.en.When;
+import io.restassured.path.xml.XmlPath;
+import io.restassured.response.Response;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+
+import java.io.File;
+import java.io.IOException;
+import java.util.*;
+
+@Slf4j
+@RequiredArgsConstructor
+public class PrintfulSteps {
+
+    private final OfferService offerService;
+    private final PrintfulApparelService printfulApparelService;
+    private final TestContext testContext;
+    private final MiraklConfig miraklConfig;
+    private final TestResourceProvider testResourceProvider;
+
+    private static final String TEST_IMAGE_PATH = "testdata/random.jpg";
+    private static final String TEST_IMAGE_NAME = "random.jpg";
+
+    @And("^I resolve the Mirakl offer details for the following Printful products:$")
+    public void iResolveTheMiraklOfferDetails(DataTable dataTable) {
+        List<Map<String, String>> products = dataTable.asMaps(String.class, String.class);
+
+        for (Map<String, String> product : products) {
+            String productName = product.get("category");
+            log.info("--- Resolving Mirakl Offer for Product: {} ---", productName);
+
+            String sku = testContext.getSkuByProductName(productName);
+            if (sku == null) {
+                throw new IllegalStateException("Failed to find SKU for product name: " + productName);
+            }
+
+            try {
+                var offer = offerService.getOfferFromShop(miraklConfig.getPrintfulShopId(), sku);
+                testContext.setCurrentSku(sku);
+                testContext.setCurrentOfferId(String.valueOf(offer.getOfferId()));
+                testContext.setShopSku(offer.getShopSku());
+                testContext.setShopId(offer.getShopId());
+
+                log.info("Resolved Offer ID: {} and Shop SKU: {} and Shop Id: {} for Printful SKU: {}",
+                        testContext.getCurrentOfferId(), testContext.getShopSku(), testContext.getShopId(), sku);
+            } catch (Exception e) {
+                log.error("Failed to fetch Mirakl offer data for SKU {}.", sku, e);
+                throw new IllegalStateException("Failed to dynamically fetch Mirakl offer data. Halting test.", e);
+            }
+        }
+    }
+
+    @And("^I upload a design asset to the Printful asset library$")
+    public void iUploadADesignAssetToPrintfulS3Library() {
+        var authNonceResponse = testContext.getAuthNonceResponse();
+
+        if (authNonceResponse == null || authNonceResponse.getNonce() == null) {
+            throw new IllegalStateException("Auth Nonce is missing! Generate Auth Nonce must be run first.");
+        }
+        String nonce = authNonceResponse.getNonce();
+
+        // Load test file via provider to keep resource access concerns isolated
+        File sourceFile = testResourceProvider.loadToTempFile(TEST_IMAGE_PATH);
+        String stableFileName = TEST_IMAGE_NAME;
+
+        PrintfulUploadFileHelper.UploadArtifact artifact = null;
+        try {
+            artifact = PrintfulUploadFileHelper.prepareStableUploadArtifact(sourceFile, stableFileName);
+
+            // --- Get Credentials ---
+            var credsResponse = printfulApparelService.getS3UploadCredentials(nonce, stableFileName);
+            var creds = credsResponse.getResult();
+
+            if (creds == null || creds.getTemporaryFileId() == null) {
+                throw new IllegalStateException("Failed to retrieve S3 Upload Credentials from Printful.");
+            }
+
+            // --- Upload directly to Amazon S3 ---
+            Response s3Response = printfulApparelService.uploadFileToS3(creds, artifact.getFile());
+
+            // Parse the AWS S3 XML Response
+            XmlPath xmlPath = s3Response.xmlPath();
+            String s3Location = xmlPath.getString("PostResponse.Location");
+            String s3Bucket = xmlPath.getString("PostResponse.Bucket");
+            String s3Key = xmlPath.getString("PostResponse.Key");
+            String rawEtag = xmlPath.getString("PostResponse.ETag");
+
+            // AWS returns ETag with quotes (e.g., "hash"). We must strip them for Printful.
+            String cleanEtag = rawEtag != null ? rawEtag.replace("\"", "") : "";
+
+            // File metadata
+            long fileSize = artifact.getFile().length();
+            String mimeType = stableFileName.endsWith(".pdf") ? "application/pdf" : "image/jpeg";
+
+            // --- Callback to Printful ---
+            var callbackResponse = printfulApparelService.fileLibraryUploadCallback(
+                    nonce,
+                    creds.getTemporaryFileId(),
+                    mimeType,
+                    fileSize,
+                    stableFileName,
+                    s3Location,
+                    s3Bucket,
+                    s3Key,
+                    cleanEtag
+            );
+
+            String callbackBody = callbackResponse.asString();
+            int callbackStatus = callbackResponse.statusCode();
+            PrintfulFileCallbackResponse callbackPayload;
+            try {
+                callbackPayload = callbackResponse.as(PrintfulFileCallbackResponse.class);
+            } catch (Exception e) {
+                throw new IllegalStateException("Failed to parse Printful callback response. HTTP " + callbackStatus + ". Body: " + callbackBody, e);
+            }
+
+            if (callbackPayload == null || callbackPayload.getResult() == null) {
+                throw new IllegalStateException("Printful callback response missing result. HTTP " + callbackStatus + ". Body: " + callbackBody);
+            }
+
+            String temporaryFileKey = callbackPayload.getResult().getTemporaryFileKey();
+
+            if (temporaryFileKey == null) {
+                throw new IllegalStateException("Failed to retrieve temporaryFileKey from Printful Callback. HTTP " + callbackStatus + ". Body: " + callbackBody);
+            }
+
+            // --- Verify File Availability ---
+            printfulApparelService.fileLibraryGetUploadedFile(nonce, temporaryFileKey);
+
+            // Save the key for the final checkout payload
+            testContext.setPrintfulTemporaryFileKey(temporaryFileKey);
+
+            log.info("Successfully Printful S3 Upload! Temporary File Key: {}", temporaryFileKey);
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to prepare stable upload file.", e);
+        } finally {
+            PrintfulUploadFileHelper.cleanupUploadArtifact(artifact);
+        }
+    }
+
+    @And("^I validate the Custom Apparel session$")
+    public void iValidateTheCustomApparelSession() {
+        log.info("--- Executing Session Validation ---");
+
+        boolean isValid = printfulApparelService.validateSession(testContext.getPrintfulSessionId(),
+                testContext.getPrintfulPhpSessIdCookie(),
+                testContext.getPrintfulFormKeyCookie()
+        );
+
+        if (!isValid) {
+            throw new IllegalStateException("Custom Apparel session validation failed (API returned false).");
+        }
+        log.info("Custom Apparel session successfully validated.");
+    }
+
+    @And("^I generate an auth nonce for the Custom Apparel session$")
+    public void iGenerateAnAuthNonce() {
+        log.info("--- Executing Auth Nonce Generation ---");
+
+        AuthNonceResponse nonceResponse = printfulApparelService.generateNonce(
+                testContext.getPrintfulPhpSessIdCookie(),
+                testContext.getPrintfulFormKeyCookie()
+        );
+        testContext.setExternalProductId(nonceResponse.getExternalProductId());
+        if (nonceResponse.getNonce() == null) {
+            throw new IllegalStateException("Failed to generate Auth Nonce. Response was null or missing nonce token.");
+        }
+        // Save the result model into context for later stages!
+        testContext.setAuthNonceResponse(nonceResponse);
+        log.debug("Successfully Generated Auth Nonce: {} for the externalProductId: {}", maskToken(nonceResponse.getNonce()), nonceResponse.getExternalProductId());
+    }
+
+    @When("^I execute the Printful punchout for the resolved products$")
+    public void iExecuteThePrintfulPunchout() {
+        String sku = testContext.getCurrentSku();
+        String offerId = testContext.getCurrentOfferId();
+        String shopSku = testContext.getShopSku();
+
+        if (sku == null || offerId == null || shopSku == null) {
+            throw new IllegalStateException("Missing required IDs. Ensure 'I resolve the Mirakl offer details' was run first.");
+        }
+
+        // Execute Punchout
+        Response redirectResponse = printfulApparelService.executePunchout(sku, offerId, shopSku);
+
+        // Harvest PHPSESSID
+        if (redirectResponse.getCookies().containsKey(PrintfulConstants.COOKIE_PHPSESSID)) {
+            testContext.setPrintfulPhpSessIdCookie(redirectResponse.getCookies().get(PrintfulConstants.COOKIE_PHPSESSID));
+        }
+
+        // Follow Redirect
+        String redirectLocation = redirectResponse.getHeader("Location");
+        if (redirectLocation == null) {
+            throw new IllegalStateException("Expected a 302 redirect with a Location header, but none was found.");
+        }
+
+        Response finalResponse = printfulApparelService.followRedirect(redirectLocation, testContext.getPrintfulPhpSessIdCookie());
+        testContext.setLastResponse(finalResponse);
+
+        // Delegate Extractions to Utility
+        extractAndSetContextData(finalResponse, redirectLocation);
+    }
+
+    @And("^I initialize the Printful design session with a random picture$")
+    public void iInitializeThePrintfulDesignSession() {
+        String sessionId = testContext.getPrintfulSessionId();
+        if (sessionId == null) {
+            throw new IllegalStateException("Printful sessionId is null! Punchout must be executed first.");
+        }
+
+        Response designResponse = printfulApparelService.uploadDesignAsset(
+                sessionId,
+                testContext.getPrintfulPhpSessIdCookie(),
+                testContext.getPrintfulFormKeyCookie()
+        );
+
+        testContext.setLastResponse(designResponse);
+        log.info("Successfully attached design asset to session: {}", sessionId);
+    }
+
+    @When("^I configure the Printful apparel variants and proceed to checkout:$")
+    public void iConfigureThePrintfulApparelVariants(DataTable dataTable) {
+        PrintfulCheckoutRequest checkoutPayload = PrintfulCheckoutRequest.builder()
+                .externalProductId(testContext.getExternalProductId())
+                .sessionId(testContext.getPrintfulSessionId())
+                .categoryId(PrintfulConstants.PRINTFUL_CATEGORY_ID)
+                .variantMap(PrintfulPayloadMapper.mapDataTableToVariants(dataTable))
+                .build();
+
+        Response response = printfulApparelService.submitApparelCheckout(
+                checkoutPayload,
+                testContext.getPrintfulPhpSessIdCookie(),
+                testContext.getPrintfulFormKeyCookie()
+        );
+
+        log.info("Apparel checkout response status: {}", response.statusCode());
+        testContext.setLastResponse(response);
+    }
+
+    // --- Private Orchestration Helper ---
+
+    private void extractAndSetContextData(Response response, String redirectLocation) {
+        String responseBody = response.asString();
+
+        // Strictly Extract Form Key
+        String formKey = PrintfulExtractorUtil.extractFormKey(response, redirectLocation);
+        if (formKey == null) {
+            throw new IllegalStateException("Extraction Failure: Could not extract form_key from cookies, Location header, or HTML body.");
+        }
+        testContext.setPrintfulFormKeyCookie(formKey);
+        log.debug("Extracted form_key: {}", maskToken(formKey));
+
+        // Strictly Extract Session ID
+        String sessionId = PrintfulExtractorUtil.extractSessionId(redirectLocation, responseBody);
+        if (sessionId == null) {
+            throw new IllegalStateException("Extraction Failure: Could not dynamically extract Printful session_id from response.");
+        }
+        testContext.setPrintfulSessionId(sessionId);
+        log.debug("Extracted Printful Session ID: {}", maskToken(sessionId));
+
+        // Strictly Extract External Product ID
+        String extProductId = PrintfulExtractorUtil.extractExternalProductId(redirectLocation, responseBody);
+        if (extProductId == null) {
+            throw new IllegalStateException("Extraction Failure: Could not dynamically extract External Product ID (UUID) from response.");
+        }
+        testContext.setExternalProductId(extProductId);
+        log.debug("Extracted External Product ID: {}", maskToken(extProductId));
+    }
+    @And("^I configure the Printful apparel variant:$")
+    public void iConfigureThePrintfulApparelVariant(DataTable dataTable) {
+        List<Map<String, String>> rows = dataTable.asMaps(String.class, String.class);
+        if (rows.isEmpty()) {
+            throw new IllegalArgumentException("Printful apparel variant table must contain at least one row.");
+        }
+        Map<String, String> row = rows.get(0);
+
+        String expectedProductName = row.get("productName");
+        String expectedColor = row.get("color");
+        String expectedTechnique = row.get("techniques"); // Extract the new column
+
+        // Strictly retrieve the Shop SKU / Category ID from Context
+        String categoryId = PrintfulConstants.PRINTFUL_CATEGORY_ID;
+        testContext.setPrintfulSelectedColor(expectedColor);
+        testContext.setPrintfulSelectedTechnique(expectedTechnique); // Save to context
+
+        if (categoryId == null || categoryId.trim().isEmpty()) {
+            throw new IllegalStateException("Printful categoryId is missing. Ensure PRINTFUL_CATEGORY_ID is configured.");
+        }
+
+        log.info("--- Configuring Printful Variant: {} - {} using Category ID: {} ---", expectedProductName, expectedColor, categoryId);
+
+        // Fetch the Catalog (This will log the cURL via defaultRequestSpec)
+        var catalogResponse = printfulApparelService.getCatalogProducts(categoryId);
+
+        if (catalogResponse == null || catalogResponse.getData() == null || catalogResponse.getData().isEmpty()) {
+            throw new IllegalStateException("Printful Catalog API returned an empty or null response for Category ID: " + categoryId);
+        }
+
+        // Filter the JSON Data for the matching product
+        var matchedProduct = catalogResponse.getData().stream()
+                .filter(p -> !p.isDiscontinued()) // Must not be discontinued
+                .filter(p -> p.getName() != null && p.getName().startsWith(expectedProductName)) // Name must start with the BDD input
+                .filter(p -> p.getColors() != null && p.getColors().stream().anyMatch(c -> c.getName().equalsIgnoreCase(expectedColor))) // Must contain the target color
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("No valid active Printful catalog product found matching name '" + expectedProductName + "' and color '" + expectedColor + "'"));
+
+        // Save the resolved ID (e.g. 146) to context
+        testContext.setPrintfulProductId(String.valueOf(matchedProduct.getId()));
+        testContext.setPrintfulSelectedColor(expectedColor);
+
+        log.info("Successfully resolved Printful Product ID: {} for Color: {} and Technique: {}",
+                testContext.getPrintfulProductId(), expectedColor, expectedTechnique);
+     }
+
+    @And("^I select quantities and proceed to checkout:$")
+    public void iSelectQuantitiesAndProceedToCheckout(DataTable dataTable) {
+        log.info("--- Selecting Quantities (Preparing for Checkout) ---");
+
+        List<Map<String, String>> rows = dataTable.asMaps(String.class, String.class);
+        if (rows.isEmpty()) {
+            throw new IllegalArgumentException("Quantities table must contain at least one row.");
+        }
+        Map<String, String> quantityMap = rows.get(0);
+
+        Map<String, Integer> selectedQuantities = new LinkedHashMap<>();
+
+        // Loop through the data table columns (Sizes: S, M, L, etc.)
+        for (Map.Entry<String, String> entry : quantityMap.entrySet()) {
+            String size = entry.getKey();
+            int qty = Integer.parseInt(entry.getValue());
+
+            // because the checkout payload requires the full variant matrix.
+            selectedQuantities.put(size, qty);
+            log.info("Mapped Size: {} | Requested Quantity: {}", size, qty);
+        }
+
+        if (selectedQuantities.isEmpty()) {
+            throw new IllegalArgumentException("The quantities data table cannot be empty!");
+        }
+
+        // Save the full map of 8 sizes to the context
+        testContext.setPrintfulSelectedQuantities(selectedQuantities);
+        log.info("All {} sizes mapped and saved. Ready for ID resolution.", selectedQuantities.size());
+    }
+
+    @When("^I add to cart or checkout the Printful apparel variants$")
+    public void iAddToCartOrCheckoutThePrintfulApparelVariants() {
+        log.info("--- Mapping Variant IDs and Fetching Dynamic Pricing for Checkout ---");
+
+        String productId = testContext.getPrintfulProductId();
+        String targetColor = testContext.getPrintfulSelectedColor();
+        String targetTechnique = testContext.getPrintfulSelectedTechnique();
+        Map<String, Integer> selectedQuantities = testContext.getPrintfulSelectedQuantities();
+
+        // (This uses the code from the previous iteration to build 'baseCheckoutVariants')
+        var variantsResponse = printfulApparelService.getCatalogVariants(productId);
+        List<PrintfulCatalogVariantsResponse.CatalogVariant> colorVariants = variantsResponse.getData().stream()
+                .filter(v -> targetColor.equalsIgnoreCase(v.getColor()))
+                .toList();
+
+        List<PrintfulVariant> baseCheckoutVariants = new ArrayList<>();
+        // Preserve input order to keep the "main variant" aligned with the DataTable
+        for (Map.Entry<String, Integer> entry : selectedQuantities.entrySet()) {
+            String size = entry.getKey();
+            Integer quantity = entry.getValue();
+            var matchedVariant = colorVariants.stream()
+                    .filter(v -> size.equalsIgnoreCase(v.getSize()))
+                    .findFirst()
+                    .orElseThrow(() -> new IllegalStateException("Missing variant ID for size: " + size));
+            baseCheckoutVariants.add(PrintfulVariant.builder()
+                    .variantId(matchedVariant.getId())
+                    .size(size)
+                    .amount(quantity)
+                    .build());
+        }
+
+        // 2. Fetch the Pricing API
+        var pricingResponse = printfulApparelService.getProductPrices(
+                productId,
+                testContext.getPrintfulPhpSessIdCookie(),
+                testContext.getPrintfulFormKeyCookie()
+        );
+
+        // Delegate the complex price extraction and difference calculation to the Helper
+        List<PrintfulVariant> fullyPricedVariants = PrintfulCheckoutHelper.buildVariantMapWithPricing(
+                baseCheckoutVariants,
+                pricingResponse,
+                targetTechnique
+        );
+
+        // Build the final JSON Payload
+        PrintfulCheckoutRequest checkoutPayload = PrintfulCheckoutRequest.builder()
+                .externalProductId(testContext.getExternalProductId()) // fb269248-3bd2...
+                .sessionId(testContext.getPrintfulSessionId())         // 6cab8bbf3788...
+                .categoryId(PrintfulConstants.PRINTFUL_CATEGORY_ID)
+                .variantMap(fullyPricedVariants)
+                .build();
+
+        // 5. Submit the Checkout!
+        Response checkoutResponse = printfulApparelService.submitCheckout(
+                checkoutPayload,
+                testContext.getPrintfulPhpSessIdCookie(),
+                testContext.getPrintfulFormKeyCookie()
+        );
+
+        log.info("Apparel Checkout Response Status: {}", checkoutResponse.statusCode());
+        testContext.setLastResponse(checkoutResponse);
+    }
+
+    @Then("the Printful checkout response should be successful")
+    public void thePrintfulCheckoutResponseShouldBeSuccessful() {
+        Response response = testContext.getLastResponse();
+        if (response == null) {
+            throw new IllegalStateException("Checkout response is missing. Ensure the checkout step ran.");
+        }
+
+        int statusCode = response.statusCode();
+        String body = response.asString();
+
+        if (statusCode != 200) {
+            throw new IllegalStateException("Checkout failed with HTTP " + statusCode + ". Body: " + body);
+        }
+        if (body == null || body.trim().isEmpty()) {
+            throw new IllegalStateException("Checkout response body was empty.");
+        }
+
+        log.info("Checkout response verified. HTTP {} and non-empty body.", statusCode);
+    }
+
+    @And("the Printful punchout context should be populated")
+    public void thePrintfulPunchoutContextShouldBePopulated() {
+        if (testContext.getPrintfulSessionId() == null || testContext.getPrintfulSessionId().isBlank()) {
+            throw new IllegalStateException("Printful sessionId is missing after punchout.");
+        }
+        if (testContext.getPrintfulFormKeyCookie() == null || testContext.getPrintfulFormKeyCookie().isBlank()) {
+            throw new IllegalStateException("Printful form_key is missing after punchout.");
+        }
+        String externalProductId = testContext.getExternalProductId();
+        if (externalProductId == null || externalProductId.isBlank()) {
+            throw new IllegalStateException("External productId is missing after punchout.");
+        }
+
+        String uuidRegex = "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$";
+        if (!externalProductId.matches(uuidRegex)) {
+            throw new IllegalStateException("External productId is not a valid UUID: " + externalProductId);
+        }
+        try {
+            UUID.fromString(externalProductId);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalStateException("External productId is not a valid UUID: " + externalProductId, e);
+        }
+        log.info("Punchout context verified: sessionId, form_key, externalProductId present.");
+    }
+
+    private static String maskToken(String value) {
+        if (value == null || value.isBlank()) {
+            return "****";
+        }
+        if (value.length() <= 4) {
+            return "****";
+        }
+        return "****" + value.substring(value.length() - 4);
+    }
+}

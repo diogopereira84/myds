@@ -19,9 +19,6 @@ import static org.junit.jupiter.api.Assertions.fail;
 @Service
 public class AdminSessionService {
 
-    @Value("${base.url}")
-    private String baseUrl;
-
     @Value("${admin.path}")
     private String adminPath;
 
@@ -46,20 +43,23 @@ public class AdminSessionService {
     @Autowired
     private RequestSpecification defaultRequestSpec;
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.fedex.automation.config.FedexConfig fedexConfig;
+
     private final CookieFilter adminCookieFilter = new CookieFilter();
     private String adminBearerToken;
 
     public RequestSpecification adminRequest() {
         return given()
                 .spec(defaultRequestSpec)
-                .baseUri(baseUrl)
+                .baseUri(fedexConfig.getBaseUrl())
                 .filter(adminCookieFilter);
     }
 
     public void bootstrapAdminSession() {
         log.info("--- [Admin] Bootstrapping Admin Session ---");
 
-        String loginUrl = baseUrl + adminPath + adminLoginEndpoint;
+        String loginUrl = fedexConfig.getBaseUrl() + adminPath + adminLoginEndpoint;
         Response pageResp = adminRequest().get(loginUrl);
         String formKey = extractFormKey(pageResp.asString());
 
@@ -84,7 +84,7 @@ public class AdminSessionService {
 
         Response response = given()
                 .spec(defaultRequestSpec)
-                .baseUri(baseUrl)
+                .baseUri(fedexConfig.getBaseUrl())
                 .header("Authorization", "Bearer " + adminBearerToken)
                 .queryParam("searchCriteria[filter_groups][0][filters][0][field]", "increment_id")
                 .queryParam("searchCriteria[filter_groups][0][filters][0][value]", incrementId)
@@ -103,7 +103,7 @@ public class AdminSessionService {
     private void getAdminBearerToken() {
         Response response = given()
                 .spec(defaultRequestSpec)
-                .baseUri(baseUrl)
+                .baseUri(fedexConfig.getBaseUrl())
                 .contentType(ContentType.JSON)
                 .body("{\"username\": \"" + username + "\", \"password\": \"" + password + "\"}")
                 .post(adminTokenEndpoint);
@@ -115,7 +115,7 @@ public class AdminSessionService {
     }
 
     public String scrapeSendToMiraklUrl(String orderEntityId) {
-        String url = baseUrl + adminPath + adminOrderViewEndpoint + orderEntityId;
+        String url = fedexConfig.getBaseUrl() + adminPath + adminOrderViewEndpoint + orderEntityId;
         log.info("Accessing Order Page: {}", url);
 
         Response response = adminRequest().get(url);
