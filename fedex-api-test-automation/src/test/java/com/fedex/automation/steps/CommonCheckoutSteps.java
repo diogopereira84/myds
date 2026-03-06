@@ -103,6 +103,13 @@ public class CommonCheckoutSteps {
     }
 
     private String resolve1PPartnerId(String productName) {
+        // TODO: replace with a dynamic lookup keyed by productName once the partner-ID API is available.
+        // Hardcoded to the only currently supported 1P partner; throw clearly if an unknown product is supplied.
+        if (!"Copies & Custom Documents".equalsIgnoreCase(productName)) {
+            throw new IllegalArgumentException(
+                    "resolve1PPartnerId: no partner ID configured for product '" + productName + "'. " +
+                    "Update this method when adding new 1P products.");
+        }
         return "CVAFLY1020";
     }
 
@@ -165,6 +172,7 @@ public class CommonCheckoutSteps {
         }
 
         if (selected == null) {
+            log.warn("Shipping method '{}' not found; falling back to first available method '{}'", methodCode, methods[0].getMethodCode());
             selected = methods[0];
         }
 
@@ -266,6 +274,7 @@ public class CommonCheckoutSteps {
         if (expected.containsKey("paymentType")) assertEquals(expected.get("paymentType"), tenderNode.path("paymentType").asText());
         if (expected.containsKey("currency")) assertEquals(expected.get("currency"), tenderNode.path("currency").asText());
         if (expected.containsKey("amount")) assertEquals(expected.get("amount"), tenderNode.path("requestedAmount").asText());
+        if (expected.containsKey("authResponse")) assertEquals(expected.get("authResponse"), tenderNode.path("authorizationResponse").path("transactionStatus").asText());
     }
 
     @And("I verify the product totals and taxation:")

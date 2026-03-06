@@ -37,6 +37,11 @@ public class TestDataFactory {
         return map;
     }
 
+    /** Backward-compatible overload — uses the default test address. */
+    public static EstimateShippingRequest createEstimateRequest() {
+        return createEstimateRequest(getDefaultAddressMap());
+    }
+
     public static EstimateShippingRequest createEstimateRequest(Map<String, String> addr) {
         return EstimateShippingRequest.builder()
                 .isPickup(false)
@@ -44,6 +49,11 @@ public class TestDataFactory {
                 .productionLocation(null)
                 .address(buildAddress(addr))
                 .build();
+    }
+
+    /** Backward-compatible overload — defaults to 3P model and the default test address. */
+    public static DeliveryRateRequestForm createRateForm(EstimateShipMethodResponse selectedMethod) {
+        return createRateForm(selectedMethod, "3P", getDefaultAddressMap());
     }
 
     public static DeliveryRateRequestForm createRateForm(EstimateShipMethodResponse selectedMethod, String sellerModel, Map<String, String> addr) {
@@ -91,6 +101,11 @@ public class TestDataFactory {
                 .build();
     }
 
+    /** Backward-compatible overload — uses the default test address. */
+    public static CreateQuotePayload buildQuotePayload(JsonNode rateResponse, EstimateShipMethodResponse selectedMethod) {
+        return buildQuotePayload(rateResponse, selectedMethod, getDefaultAddressMap());
+    }
+
     public static CreateQuotePayload buildQuotePayload(JsonNode rateResponse, EstimateShipMethodResponse selectedMethod, Map<String, String> addr) {
         try {
             if (rateResponse == null || !rateResponse.has("rateQuote")) {
@@ -127,6 +142,11 @@ public class TestDataFactory {
         } catch (Exception e) {
             throw new RuntimeException("Failed to build quote payload", e);
         }
+    }
+
+    /** Backward-compatible overload — uses default payment map and default address. */
+    public static SubmitOrderRequest createOrderRequest(String encryptedCardData) {
+        return createOrderRequest(encryptedCardData, getDefaultPaymentMap(), getDefaultAddressMap());
     }
 
     public static SubmitOrderRequest createOrderRequest(String encryptedCardData, Map<String, String> paymentMap, Map<String, String> addrMap) {

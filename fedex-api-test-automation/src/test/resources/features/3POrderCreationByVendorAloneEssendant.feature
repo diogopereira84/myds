@@ -25,17 +25,6 @@ Feature: Essendant 3P Order Creation by Vendor Alone - Product Checkout Flow
     When I submit the order using a secure credit card
     Then the order should be placed successfully with a generated Order Number
     And I verify the order contact details:
-      | firstName | <firstName> |
-      | lastName  | <lastName>  |
-      | email     | <email>     |
-    And I verify the transaction payment details:
-      | paymentType  | CREDIT_CARD |
-      | currency     | USD         |
-      | authResponse | APPROVED    |
-    And I verify the product line items:
-      | productName                                      | quantity   |
-      | ACCO Metal Book Rings, 1.5 in. Diameter, 100/Box | 1          |
-    And I verify the order contact details:
       | firstName     | <firstName>           |
       | lastName      | <lastName>            |
       | email         | <email>               |
@@ -48,6 +37,9 @@ Feature: Essendant 3P Order Creation by Vendor Alone - Product Checkout Flow
       | taxableAmount        | <taxableAmount>      |
       | taxAmount            | <taxAmount>          |
       | productTotalAmount   | <productTotalAmount> |
+    And I verify the product line items:
+      | productName                                      | quantity   |
+      | ACCO Metal Book Rings, 1.5 in. Diameter, 100/Box | 1          |
     Examples:
       | firstName | lastName | email                         | taxableAmount | taxAmount | productTotalAmount | totalAmount | authStatus |
       | Harvey    | Hamilton | harvey.hamilton.osv@fedex.com | 75.79         | 8.15      | 83.94              | 83.94       | APPROVED   |
