@@ -274,12 +274,25 @@ public class TemplateConfiguratorService {
         testContext.setLastResponse(response);
 
         String stateId = response.jsonPath().getString("output.configuratorState.configuratorStateId");
-        if (stateId != null && !stateId.isBlank()) {
-            testContext.setConfiguratorStateId(stateId);
-            log.info("Successfully created Configurator State. State ID: {}", stateId);
+        if (stateId == null || stateId.isBlank()) {
+            throw new IllegalStateException(
+                    "Configurator state creation failed: missing output.configuratorState.configuratorStateId. " +
+                            "HTTP " + response.getStatusCode() + ", body: " + response.asString()
+            );
         }
 
-        ObjectNode returnedState = objectMapper.valueToTree(response.jsonPath().getMap("output.configuratorState"));
+        testContext.setConfiguratorStateId(stateId);
+        log.info("Successfully created Configurator State. State ID: {}", stateId);
+
+        Map<String, Object> configuratorState = response.jsonPath().getMap("output.configuratorState");
+        if (configuratorState == null || configuratorState.isEmpty()) {
+            throw new IllegalStateException(
+                    "Configurator state creation returned empty output.configuratorState payload. " +
+                            "HTTP " + response.getStatusCode() + ", body: " + response.asString()
+            );
+        }
+
+        ObjectNode returnedState = objectMapper.valueToTree(configuratorState);
         testContext.setConfiguratorPayload(returnedState.toString());
 
         return response;

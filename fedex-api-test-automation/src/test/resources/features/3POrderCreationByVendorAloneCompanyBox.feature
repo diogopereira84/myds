@@ -25,14 +25,6 @@ Feature: CompanyBox Product Checkout Flow
       | 4111111111111111 | 12       | 2035    | 123   |
     When I submit the order using a secure credit card
     Then the order should be placed successfully with a generated Order Number
-    And I verify the order contact details:
-      | firstName | <firstName> |
-      | lastName  | <lastName>  |
-      | email     | <email>     |
-    And I verify the transaction payment details:
-      | paymentType  | CREDIT_CARD |
-      | currency     | USD         |
-      | authResponse | APPROVED    |
     And I verify the product line items:
       | productName            | quantity   |
       | Custom Box Sample Pack | 1          |

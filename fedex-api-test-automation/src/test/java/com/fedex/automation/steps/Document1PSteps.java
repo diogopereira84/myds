@@ -104,7 +104,7 @@ public class Document1PSteps {
     }
 
     @And("I create the Configurator State and apply the following features:")
-    public void iCreateConfiguratorState(DataTable dataTable) throws Exception {
+    public void iCreateConfiguratorState(DataTable dataTable) {
         Map<String, String> features = dataTable.asMap(String.class, String.class);
         createConfiguratorStateWithFeatures(features);
     }
@@ -115,7 +115,7 @@ public class Document1PSteps {
     }
 
     @When("I configure and add the following 1P custom documents to the cart:")
-    public void iConfigureAndAddTheFollowing1PCustomDocumentsToTheCart(DataTable dataTable) throws Exception {
+    public void iConfigureAndAddTheFollowing1PCustomDocumentsToTheCart(DataTable dataTable) {
         StepAssertions.assertTableNotEmpty(dataTable, "Custom documents table must contain at least one row.");
         List<Map<String, String>> rows = dataTable.asMaps(String.class, String.class);
 
@@ -133,6 +133,7 @@ public class Document1PSteps {
 
             resolveProductContext(productName);
             startConfiguratorSession();
+            searchConfiguratorSession();
             uploadAndConvertDocument(documentName);
             createConfiguratorStateWithFeatures(features);
             addConfiguredItemToCart(quantity);
@@ -162,7 +163,6 @@ public class Document1PSteps {
         Response sessionResponse = templateConfiguratorService.createConfiguratorSession();
         assertOk(sessionResponse, "Configurator session creation failed");
         Assertions.assertNotNull(testContext.getSessionId(), "Session ID must be set after configurator session creation.");
-        searchConfiguratorSession();
     }
 
     private void searchConfiguratorSession() {
@@ -178,7 +178,7 @@ public class Document1PSteps {
         Assertions.assertNotNull(testContext.getPrintReadyDocId(), "Print-ready document ID must be set after conversion.");
     }
 
-    private void createConfiguratorStateWithFeatures(Map<String, String> features) throws Exception {
+    private void createConfiguratorStateWithFeatures(Map<String, String> features) {
         Response stateResponse = templateConfiguratorService.createConfiguratorState(features);
         assertOk(stateResponse, "Configurator state creation failed");
         Assertions.assertNotNull(testContext.getConfiguratorStateId(), "Configurator state ID must be set after state creation.");
