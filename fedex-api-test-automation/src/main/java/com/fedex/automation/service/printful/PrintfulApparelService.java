@@ -202,7 +202,7 @@ public class PrintfulApparelService {
                 .response();
     }
 
-    public PrintfulFileCallbackResponse fileLibraryUploadCallback(
+    public Response fileLibraryUploadCallback(
             String nonce,
             String temporaryFileId,
             String fileType,
@@ -232,7 +232,7 @@ public class PrintfulApparelService {
                 .then()
                 .statusCode(200)
                 .extract()
-                .as(PrintfulFileCallbackResponse.class);
+                .response();
     }
 
     public void fileLibraryGetUploadedFile(String nonce, String temporaryFileKey) {

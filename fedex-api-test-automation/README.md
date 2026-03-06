@@ -65,7 +65,14 @@ Example:
 
 ```powershell
 $env:SPRING_PROFILES_ACTIVE="local"
-$env:TEST_RESOURCES_BASEDIR="C:\path\to\your\testdata"
+$env:TEST_RESOURCES_BASEDIR="C:\path\to\your"  # parent directory that contains testdata/
+```
+
+Example for the current layout:
+
+```powershell
+$env:SPRING_PROFILES_ACTIVE="local"
+$env:TEST_RESOURCES_BASEDIR="C:\path\to\your\resources"
 ```
 
 ## CI Usage

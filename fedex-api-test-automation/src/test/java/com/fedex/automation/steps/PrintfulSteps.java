@@ -6,6 +6,7 @@ import com.fedex.automation.context.TestContext;
 import com.fedex.automation.model.printful.AuthNonceResponse;
 import com.fedex.automation.model.printful.PrintfulCatalogVariantsResponse;
 import com.fedex.automation.model.printful.PrintfulCheckoutRequest;
+import com.fedex.automation.model.printful.PrintfulFileCallbackResponse;
 import com.fedex.automation.model.printful.PrintfulVariant;
 import com.fedex.automation.service.mirakl.OfferService;
 import com.fedex.automation.service.printful.PrintfulApparelService;
@@ -124,10 +125,23 @@ public class PrintfulSteps {
                     cleanEtag
             );
 
-            String temporaryFileKey = callbackResponse.getResult().getTemporaryFileKey();
+            String callbackBody = callbackResponse.asString();
+            int callbackStatus = callbackResponse.statusCode();
+            PrintfulFileCallbackResponse callbackPayload;
+            try {
+                callbackPayload = callbackResponse.as(PrintfulFileCallbackResponse.class);
+            } catch (Exception e) {
+                throw new IllegalStateException("Failed to parse Printful callback response. HTTP " + callbackStatus + ". Body: " + callbackBody, e);
+            }
+
+            if (callbackPayload == null || callbackPayload.getResult() == null) {
+                throw new IllegalStateException("Printful callback response missing result. HTTP " + callbackStatus + ". Body: " + callbackBody);
+            }
+
+            String temporaryFileKey = callbackPayload.getResult().getTemporaryFileKey();
 
             if (temporaryFileKey == null) {
-                throw new IllegalStateException("Failed to retrieve temporaryFileKey from Printful Callback. Printful returned success: 0.");
+                throw new IllegalStateException("Failed to retrieve temporaryFileKey from Printful Callback. HTTP " + callbackStatus + ". Body: " + callbackBody);
             }
 
             // --- Verify File Availability ---
@@ -275,6 +289,9 @@ public class PrintfulSteps {
     @And("^I configure the Printful apparel variant:$")
     public void iConfigureThePrintfulApparelVariant(DataTable dataTable) {
         List<Map<String, String>> rows = dataTable.asMaps(String.class, String.class);
+        if (rows.isEmpty()) {
+            throw new IllegalArgumentException("Printful apparel variant table must contain at least one row.");
+        }
         Map<String, String> row = rows.get(0);
 
         String expectedProductName = row.get("productName");
