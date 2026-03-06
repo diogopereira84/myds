@@ -268,7 +268,7 @@ public class PrintfulSteps {
             throw new IllegalStateException("Extraction Failure: Could not extract form_key from cookies, Location header, or HTML body.");
         }
         testContext.setPrintfulFormKeyCookie(formKey);
-        log.info("Extracted form_key: {}", formKey);
+        log.debug("Extracted form_key: {}", maskToken(formKey));
 
         // Strictly Extract Session ID
         String sessionId = PrintfulExtractorUtil.extractSessionId(redirectLocation, responseBody);
@@ -276,7 +276,7 @@ public class PrintfulSteps {
             throw new IllegalStateException("Extraction Failure: Could not dynamically extract Printful session_id from response.");
         }
         testContext.setPrintfulSessionId(sessionId);
-        log.info("Extracted Printful Session ID: {}", sessionId);
+        log.debug("Extracted Printful Session ID: {}", maskToken(sessionId));
 
         // Strictly Extract External Product ID
         String extProductId = PrintfulExtractorUtil.extractExternalProductId(redirectLocation, responseBody);
@@ -284,7 +284,7 @@ public class PrintfulSteps {
             throw new IllegalStateException("Extraction Failure: Could not dynamically extract External Product ID (UUID) from response.");
         }
         testContext.setExternalProductId(extProductId);
-        log.info("Extracted External Product ID: {}", extProductId);
+        log.debug("Extracted External Product ID: {}", maskToken(extProductId));
     }
     @And("^I configure the Printful apparel variant:$")
     public void iConfigureThePrintfulApparelVariant(DataTable dataTable) {
@@ -299,21 +299,21 @@ public class PrintfulSteps {
         String expectedTechnique = row.get("techniques"); // Extract the new column
 
         // Strictly retrieve the Shop SKU / Category ID from Context
-        String shopSkuCategoryId = testContext.getShopSku();
+        String categoryId = PrintfulConstants.PRINTFUL_CATEGORY_ID;
         testContext.setPrintfulSelectedColor(expectedColor);
         testContext.setPrintfulSelectedTechnique(expectedTechnique); // Save to context
 
-        if (shopSkuCategoryId == null || shopSkuCategoryId.trim().isEmpty()) {
-            throw new IllegalStateException("Shop SKU not found in context! Ensure 'I resolve the Mirakl offer details' was run before this step so the Seller Model is populated.");
+        if (categoryId == null || categoryId.trim().isEmpty()) {
+            throw new IllegalStateException("Printful categoryId is missing. Ensure PRINTFUL_CATEGORY_ID is configured.");
         }
 
-        log.info("--- Configuring Printful Variant: {} - {} using Category ID: {} ---", expectedProductName, expectedColor, shopSkuCategoryId);
+        log.info("--- Configuring Printful Variant: {} - {} using Category ID: {} ---", expectedProductName, expectedColor, categoryId);
 
         // Fetch the Catalog (This will log the cURL via defaultRequestSpec)
-        var catalogResponse = printfulApparelService.getCatalogProducts(shopSkuCategoryId);
+        var catalogResponse = printfulApparelService.getCatalogProducts(categoryId);
 
         if (catalogResponse == null || catalogResponse.getData() == null || catalogResponse.getData().isEmpty()) {
-            throw new IllegalStateException("Printful Catalog API returned an empty or null response for Category ID: " + shopSkuCategoryId);
+            throw new IllegalStateException("Printful Catalog API returned an empty or null response for Category ID: " + categoryId);
         }
 
         // Filter the JSON Data for the matching product
@@ -337,6 +337,9 @@ public class PrintfulSteps {
         log.info("--- Selecting Quantities (Preparing for Checkout) ---");
 
         List<Map<String, String>> rows = dataTable.asMaps(String.class, String.class);
+        if (rows.isEmpty()) {
+            throw new IllegalArgumentException("Quantities table must contain at least one row.");
+        }
         Map<String, String> quantityMap = rows.get(0);
 
         Map<String, Integer> selectedQuantities = new LinkedHashMap<>();
@@ -409,7 +412,7 @@ public class PrintfulSteps {
         PrintfulCheckoutRequest checkoutPayload = PrintfulCheckoutRequest.builder()
                 .externalProductId(testContext.getExternalProductId()) // fb269248-3bd2...
                 .sessionId(testContext.getPrintfulSessionId())         // 6cab8bbf3788...
-                .categoryId(testContext.getShopSku())              // "18"
+                .categoryId(PrintfulConstants.PRINTFUL_CATEGORY_ID)
                 .variantMap(fullyPricedVariants)
                 .build();
 
