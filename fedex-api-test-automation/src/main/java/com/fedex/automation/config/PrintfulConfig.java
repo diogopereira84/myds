@@ -8,8 +8,11 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class PrintfulConfig {
 
-    @Value("${printful.base.url}")
-    private String printfulBaseUrl;
+    @Value("${printful.api.base.url}")
+    private String printfulApiBaseUrl;
+
+    @Value("${printful.web.base.url}")
+    private String printfulWebBaseUrl;
 
     @Value("${printful.api.key}")
     private String printfulApiToken;

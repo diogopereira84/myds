@@ -1,6 +1,5 @@
 package com.fedex.automation.utils;
 
-import com.fedex.automation.model.printful.PrintfulCheckoutRequest;
 import com.fedex.automation.model.printful.PrintfulProductPricesResponse;
 import com.fedex.automation.model.printful.PrintfulVariant;
 

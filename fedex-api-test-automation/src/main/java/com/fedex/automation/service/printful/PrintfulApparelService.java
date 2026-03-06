@@ -9,7 +9,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.awaitility.Awaitility;
 import org.awaitility.core.ConditionTimeoutException;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
@@ -160,15 +159,15 @@ public class PrintfulApparelService {
                 .response();
     }
 
-    public S3UploadCredentialsResponse getS3UploadCredentials(String nonce) {
-        log.info("--- Step 0: Requesting Printful S3 Upload Credentials ---");
+    public S3UploadCredentialsResponse getS3UploadCredentials(String nonce, String fileName) {
+        log.info("--- Requesting Printful S3 Upload Credentials ---");
         return given()
                 .spec(defaultRequestSpec)
-                .baseUri(printfulConfig.getPrintfulBaseUrl())
+                .baseUri(printfulConfig.getPrintfulWebBaseUrl())
                 .header("Authorization", "Bearer " + nonce)
                 .contentType("application/x-www-form-urlencoded; charset=UTF-8") // Added Content-Type
                 .formParam("uploadType", "embedded-designer") // Added payload body
-                .formParam("fileName", "random.jpg")          // Added payload body
+                .formParam("fileName", fileName)
                 .post("/rpc/embedded-designer-rpc/file-library-upload")
                 .then()
                 .statusCode(200)
@@ -177,7 +176,7 @@ public class PrintfulApparelService {
     }
 
     public Response uploadFileToS3(S3UploadCredentialsResponse.S3Credentials creds, java.io.File file) {
-        log.info("--- Step 1: Uploading File to S3 Bucket ---");
+        log.info("--- Uploading File to S3 Bucket ---");
         var request = given()
                 .spec(defaultRequestSpec)
                 .baseUri(printfulConfig.getPrintfulS3Url())
@@ -214,11 +213,11 @@ public class PrintfulApparelService {
             String key,
             String etag) {
 
-        log.info("--- Step 2: Printful File Upload Callback ---");
+        log.info("--- Printful File Upload Callback ---");
 
         return given()
                 .spec(defaultRequestSpec)
-                .baseUri(printfulConfig.getPrintfulBaseUrl())
+                .baseUri(printfulConfig.getPrintfulWebBaseUrl())
                 .header("Authorization", "Bearer " + nonce)
                 .contentType("application/x-www-form-urlencoded; charset=UTF-8")
                 .formParam("temporaryFileId", temporaryFileId)
@@ -237,7 +236,7 @@ public class PrintfulApparelService {
     }
 
     public void fileLibraryGetUploadedFile(String nonce, String temporaryFileKey) {
-        log.info("--- Step 3: Verifying Uploaded File in Printful Library (with Awaitility Polling) ---");
+        log.info("--- Verifying Uploaded File in Printful Library (with Awaitility Polling) ---");
         String requestBody = String.format("{\"temporaryFileKey\":\"%s\"}", temporaryFileKey);
 
         try {
@@ -249,7 +248,7 @@ public class PrintfulApparelService {
 
                         Response response = given()
                                 .spec(defaultRequestSpec)
-                                .baseUri(printfulConfig.getPrintfulBaseUrl())
+                                .baseUri(printfulConfig.getPrintfulWebBaseUrl())
                                 .header("Authorization", "Bearer " + nonce)
                                 .contentType("application/json")
                                 .body(requestBody)
@@ -283,7 +282,7 @@ public class PrintfulApparelService {
 
         return given()
                 .spec(defaultRequestSpec) // <--- THIS triggers your framework's CurlLoggingFilter
-                .baseUri(printfulConfig.getPrintfulBaseUrl())
+                .baseUri(printfulConfig.getPrintfulApiBaseUrl())
                 .header("Authorization", "Bearer " + printfulConfig.getPrintfulApiToken())
                 .header("X-PF-Store-ID", printfulConfig.getPrintfulStoreId())
                 .queryParam("category_ids", categoryId)
@@ -299,7 +298,7 @@ public class PrintfulApparelService {
 
         return given()
                 .spec(defaultRequestSpec)
-                .baseUri(printfulConfig.getPrintfulBaseUrl()) // Targets API host from config
+                .baseUri(printfulConfig.getPrintfulApiBaseUrl()) // Targets API host from config
                 .header("Authorization", "Bearer " + printfulConfig.getPrintfulApiToken())
                 .header("X-PF-Store-ID", printfulConfig.getPrintfulStoreId())
                 .queryParam("limit", 100)
@@ -344,4 +343,3 @@ public class PrintfulApparelService {
                 .response();
     }
 }
-

@@ -12,18 +12,23 @@ import com.fedex.automation.service.printful.PrintfulApparelService;
 import com.fedex.automation.utils.PrintfulCheckoutHelper;
 import com.fedex.automation.utils.PrintfulExtractorUtil;
 import com.fedex.automation.utils.PrintfulPayloadMapper;
+import com.fedex.automation.utils.PrintfulUploadFileHelper;
 import com.fedex.automation.utils.TestResourceProvider;
 import io.cucumber.datatable.DataTable;
 import io.cucumber.java.en.And;
 import io.cucumber.java.en.Then;
 import io.cucumber.java.en.When;
+import io.restassured.path.xml.XmlPath;
 import io.restassured.response.Response;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.util.*;
 
 @Slf4j
 @RequiredArgsConstructor
@@ -34,6 +39,9 @@ public class PrintfulSteps {
     private final TestContext testContext;
     private final MiraklConfig miraklConfig;
     private final TestResourceProvider testResourceProvider;
+
+    private static final String TEST_IMAGE_PATH = "testdata/random.jpg";
+    private static final String TEST_IMAGE_NAME = "random.jpg";
 
     @And("^I resolve the Mirakl offer details for the following Printful products:$")
     public void iResolveTheMiraklOfferDetails(DataTable dataTable) {
@@ -74,61 +82,71 @@ public class PrintfulSteps {
         String nonce = authNonceResponse.getNonce();
 
         // Load test file via provider to keep resource access concerns isolated
-        java.io.File uploadFile = testResourceProvider.loadToTempFile("testdata/random.jpg");
+        File sourceFile = testResourceProvider.loadToTempFile(TEST_IMAGE_PATH);
+        String stableFileName = TEST_IMAGE_NAME;
 
-        // --- Get Credentials ---
-        var credsResponse = printfulApparelService.getS3UploadCredentials(nonce);
-        var creds = credsResponse.getResult();
+        PrintfulUploadFileHelper.UploadArtifact artifact = null;
+        try {
+            artifact = PrintfulUploadFileHelper.prepareStableUploadArtifact(sourceFile, stableFileName);
 
-        if (creds == null || creds.getTemporaryFileId() == null) {
-            throw new IllegalStateException("Failed to retrieve S3 Upload Credentials from Printful.");
+            // --- Get Credentials ---
+            var credsResponse = printfulApparelService.getS3UploadCredentials(nonce, stableFileName);
+            var creds = credsResponse.getResult();
+
+            if (creds == null || creds.getTemporaryFileId() == null) {
+                throw new IllegalStateException("Failed to retrieve S3 Upload Credentials from Printful.");
+            }
+
+            // --- Upload directly to Amazon S3 ---
+            Response s3Response = printfulApparelService.uploadFileToS3(creds, artifact.getFile());
+
+            // Parse the AWS S3 XML Response
+            XmlPath xmlPath = s3Response.xmlPath();
+            String s3Location = xmlPath.getString("PostResponse.Location");
+            String s3Bucket = xmlPath.getString("PostResponse.Bucket");
+            String s3Key = xmlPath.getString("PostResponse.Key");
+            String rawEtag = xmlPath.getString("PostResponse.ETag");
+
+            // AWS returns ETag with quotes (e.g., "hash"). We must strip them for Printful.
+            String cleanEtag = rawEtag != null ? rawEtag.replace("\"", "") : "";
+
+            // File metadata
+            long fileSize = artifact.getFile().length();
+            String mimeType = stableFileName.endsWith(".pdf") ? "application/pdf" : "image/jpeg";
+
+            // --- Callback to Printful ---
+            var callbackResponse = printfulApparelService.fileLibraryUploadCallback(
+                    nonce,
+                    creds.getTemporaryFileId(),
+                    mimeType,
+                    fileSize,
+                    stableFileName,
+                    s3Location,
+                    s3Bucket,
+                    s3Key,
+                    cleanEtag
+            );
+
+            String temporaryFileKey = callbackResponse.getResult().getTemporaryFileKey();
+
+            if (temporaryFileKey == null) {
+                throw new IllegalStateException("Failed to retrieve temporaryFileKey from Printful Callback. Printful returned success: 0.");
+            }
+
+            // --- Verify File Availability ---
+            printfulApparelService.fileLibraryGetUploadedFile(nonce, temporaryFileKey);
+
+            // Save the key for the final checkout payload
+            testContext.setPrintfulTemporaryFileKey(temporaryFileKey);
+
+            log.info("Successfully Printful S3 Upload! Temporary File Key: {}", temporaryFileKey);
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to prepare stable upload file.", e);
+        } finally {
+            PrintfulUploadFileHelper.cleanupUploadArtifact(artifact);
         }
-
-        // --- Upload directly to Amazon S3 ---
-        Response s3Response = printfulApparelService.uploadFileToS3(creds, uploadFile);
-
-        // Parse the AWS S3 XML Response
-        io.restassured.path.xml.XmlPath xmlPath = s3Response.xmlPath();
-        String s3Location = xmlPath.getString("PostResponse.Location");
-        String s3Bucket = xmlPath.getString("PostResponse.Bucket");
-        String s3Key = xmlPath.getString("PostResponse.Key");
-        String rawEtag = xmlPath.getString("PostResponse.ETag");
-
-        // AWS returns ETag with quotes (e.g., "hash"). We must strip them for Printful.
-        String cleanEtag = rawEtag != null ? rawEtag.replace("\"", "") : "";
-
-        // File metadata
-        String fileName = uploadFile.getName();
-        long fileSize = uploadFile.length();
-        String mimeType = fileName.endsWith(".pdf") ? "application/pdf" : "image/jpeg";
-
-        // --- Callback to Printful ---
-        var callbackResponse = printfulApparelService.fileLibraryUploadCallback(
-                nonce,
-                creds.getTemporaryFileId(),
-                mimeType,
-                fileSize,
-                fileName,
-                s3Location,
-                s3Bucket,
-                s3Key,
-                cleanEtag
-        );
-
-        String temporaryFileKey = callbackResponse.getResult().getTemporaryFileKey();
-
-        if (temporaryFileKey == null) {
-            throw new IllegalStateException("Failed to retrieve temporaryFileKey from Printful Callback. Printful returned success: 0.");
-        }
-
-        // --- Verify File Availability ---
-        printfulApparelService.fileLibraryGetUploadedFile(nonce, temporaryFileKey);
-
-        // Save the key for the final checkout payload
-        testContext.setPrintfulTemporaryFileKey(temporaryFileKey);
-
-        log.info("Successfully Printful S3 Upload! Temporary File Key: {}", temporaryFileKey);
     }
+
     @And("^I validate the Custom Apparel session$")
     public void iValidateTheCustomApparelSession() {
         log.info("--- Executing Session Validation ---");
@@ -307,7 +325,7 @@ public class PrintfulSteps {
         List<Map<String, String>> rows = dataTable.asMaps(String.class, String.class);
         Map<String, String> quantityMap = rows.get(0);
 
-        java.util.Map<String, Integer> selectedQuantities = new java.util.HashMap<>();
+        Map<String, Integer> selectedQuantities = new HashMap<>();
 
         // Loop through the data table columns (Sizes: S, M, L, etc.)
         for (Map.Entry<String, String> entry : quantityMap.entrySet()) {
@@ -431,7 +449,7 @@ public class PrintfulSteps {
             throw new IllegalStateException("External productId is not a valid UUID: " + externalProductId);
         }
         try {
-            java.util.UUID.fromString(externalProductId);
+            UUID.fromString(externalProductId);
         } catch (IllegalArgumentException e) {
             throw new IllegalStateException("External productId is not a valid UUID: " + externalProductId, e);
         }

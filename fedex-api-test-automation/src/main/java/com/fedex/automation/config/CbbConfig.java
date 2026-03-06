@@ -1,8 +1,5 @@
 package com.fedex.automation.config;
 
-import lombok.Data;
-import org.springframework.context.annotation.Configuration;
-
 /**
  * Placeholder for future CBB-related configuration.
  *
